@@ -36,23 +36,24 @@ const rssParser = new Parser({
 
 const RSS_FEEDS = [
   // ===== TÜRKÇE KAYNAKLAR (önce bunlar çekilir) =====
-  { url: 'https://tr.investing.com/rss/news.rss',                          cat: 'finans',  emoji: '📊', kaynak: 'Investing.com TR',  lang: 'tr' },
-  { url: 'https://investing.com/rss/news_1.rss',                           cat: 'doviz',   emoji: '💱', kaynak: 'Investing.com TR',  lang: 'tr' },
-  { url: 'https://investing.com/rss/news_11.rss',                          cat: 'emtia',   emoji: '🥇', kaynak: 'Investing.com TR',  lang: 'tr' },
-  { url: 'https://investing.com/rss/news_14.rss',                          cat: 'ekonomi', emoji: '🏛', kaynak: 'Investing.com TR',  lang: 'tr' },
-  { url: 'https://investing.com/rss/news_25.rss',                          cat: 'borsa',   emoji: '📈', kaynak: 'Investing.com TR',  lang: 'tr' },
+  { url: 'https://tr.investing.com/rss/news.rss',  cat: 'finans',  emoji: '📊', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
+  { url: 'https://tr.investing.com/rss/news_1.rss',  cat: 'doviz',   emoji: '💱', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
+  { url: 'https://tr.investing.com/rss/news_11.rss', cat: 'emtia',   emoji: '🥇', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
+  { url: 'https://tr.investing.com/rss/news_14.rss', cat: 'ekonomi', emoji: '🏛', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
+  { url: 'https://tr.investing.com/rss/news_25.rss', cat: 'borsa',   emoji: '📈', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
   { url: 'https://www.haberturk.com/rss/ekonomi.xml',                      cat: 'ekonomi', emoji: '🏛', kaynak: 'Haberturk',         lang: 'tr' },
   { url: 'https://www.haberturk.com/rss/borsa.xml',                        cat: 'borsa',   emoji: '📈', kaynak: 'Haberturk',         lang: 'tr' },
   { url: 'https://www.bloomberght.com/rss',                                 cat: 'finans',  emoji: '📊', kaynak: 'Bloomberg HT',      lang: 'tr' },
   { url: 'https://www.cnnturk.com/feed/rss/ekonomi/news',                  cat: 'ekonomi', emoji: '🏛', kaynak: 'CNN Turk',          lang: 'tr' },
   { url: 'https://www.ntv.com.tr/ekonomi.rss',                             cat: 'ekonomi', emoji: '🏛', kaynak: 'NTV',               lang: 'tr' },
   { url: 'https://feeds.feedburner.com/paraAnaliz',                        cat: 'analiz',  emoji: '🔍', kaynak: 'Para Analiz',       lang: 'tr' },
-  // ===== İNGİLİZCE KAYNAKLAR (AI çevirir) =====
-  { url: 'https://cointelegraph.com/rss',                                   cat: 'kripto',  emoji: '₿',  kaynak: 'CoinTelegraph',     lang: 'en' },
-  { url: 'https://cnbc.com/id/10000664/device/rss/rss.html',               cat: 'finans',  emoji: '📊', kaynak: 'CNBC',              lang: 'en' },
-  { url: 'https://cnbc.com/id/15839135/device/rss/rss.html',               cat: 'piyasa',  emoji: '📈', kaynak: 'CNBC Markets',      lang: 'en' },
-  { url: 'https://feeds.bloomberg.com/markets/news.rss',                   cat: 'piyasa',  emoji: '📈', kaynak: 'Bloomberg',         lang: 'en' },
-  { url: 'https://feeds.reuters.com/reuters/businessNews',                  cat: 'ekonomi', emoji: '🏛', kaynak: 'Reuters',           lang: 'en' },
+  // ===== İNGİLİZCE KAYNAKLAR (sadece kripto - AI çevirir) =====
+  { url: 'https://cointelegraph.com/rss', cat: 'kripto', emoji: '₿', kaynak: 'CoinTelegraph', lang: 'en' },
+  // Bloomberg ve Reuters geçici kapalı - çok fazla İngilizce haber geliyor
+  // { url: 'https://feeds.bloomberg.com/markets/news.rss', cat: 'piyasa', emoji: '📈', kaynak: 'Bloomberg', lang: 'en' },
+  // { url: 'https://feeds.reuters.com/reuters/businessNews', cat: 'ekonomi', emoji: '🏛', kaynak: 'Reuters', lang: 'en' },
+  // { url: 'https://cnbc.com/id/10000664/device/rss/rss.html', cat: 'finans', emoji: '📊', kaynak: 'CNBC', lang: 'en' },
+  // { url: 'https://cnbc.com/id/15839135/device/rss/rss.html', cat: 'piyasa', emoji: '📈', kaynak: 'CNBC Markets', lang: 'en' },
 ];
 
 const CAT_TAGS = {
@@ -66,6 +67,16 @@ const CAT_TAGS = {
 };
 
 const STATIC_TRENDS = ['#BIST100', '#dolar', '#altin', '#faiz', '#kripto'];
+
+// Türkçe karakter kontrolü
+function isTurkish(text) {
+  if(!text) return false;
+  const trChars = /[çğıöşüÇĞİÖŞÜ]/;
+  const enWords = /(the|and|for|that|this|with|from|have|been|will|said|says|were|they|their|which|would|could|about|after|before|during|market|stock|shares|trading|investors|percent|billion|million)/i;
+  if(trChars.test(text)) return true;
+  if(enWords.test(text)) return false;
+  return true;
+}
 
 function createSlug(title) {
   return slugify(title, { lower: true, strict: true, trim: true }).substring(0, 80);
@@ -112,6 +123,12 @@ async function fetchAndSaveNews() {
         const title = (item.title || '').trim();
         if (!title || !orijinalUrl) continue;
         if (haberler.find(h => h.orijinalUrl === orijinalUrl)) continue;
+        
+        // Türkçe kaynak ama İngilizce haber geliyorsa atla
+        if (feed.checkTr && !isTurkish(title)) {
+          console.log('TR kaynaktan İngilizce haber atlandı:', title.substring(0,50));
+          continue;
+        }
 
         const slug = createSlug(title);
         const bizimUrl = `https://anlikhaber.com/haber/${slug}`;
