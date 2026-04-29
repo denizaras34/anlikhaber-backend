@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnlıkHaber — Son Dakika Finans ve Piyasa Haberleri</title>
+<meta name="description" content="Türkiye ve dünyadan anlık finans haberleri, borsa, döviz, kripto ve ekonomi gelişmeleri.">
+<meta property="og:title" content="AnlıkHaber — Son Dakika Finans Haberleri">
+<meta property="og:url" content="https://anlikhaber.com">
+<link rel="canonical" href="https://anlikhaber.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0f;--surface:#13131a;--border:#1e1e2a;
+  --accent:#e8c84a;--text:#f0ede8;--muted:#6b6b80;
+  --green:#22c55e;--red:#ef4444;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh}
+
+/* TICKER */
+.ticker-bar{background:var(--accent);color:#0a0a0f;font-size:12px;font-weight:600;padding:7px 0;overflow:hidden;white-space:nowrap}
+.ticker-inner{display:inline-flex;gap:48px;animation:ticker 35s linear infinite}
+@keyframes ticker{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.ticker-item{display:flex;align-items:center;gap:6px}
+.tick-up{color:#065f30}.tick-down{color:#7f1d1d}
+
+/* HEADER */
+header{border-bottom:1px solid var(--border);padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{font-family:'Playfair Display',serif;font-size:24px;font-weight:900;letter-spacing:-1px}
+.logo span{color:var(--accent)}
+.logo-sub{font-size:10px;color:var(--muted);letter-spacing:1px;border-left:1px solid var(--border);padding-left:10px;margin-left:10px}
+nav{display:flex}
+nav a{color:var(--muted);text-decoration:none;font-size:12px;padding:0 12px;height:60px;display:flex;align-items:center;border-bottom:2px solid transparent;transition:all .2s}
+nav a:hover,nav a.active{color:var(--text);border-bottom-color:var(--accent)}
+.live-badge{background:var(--red);color:#fff;font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px;letter-spacing:1px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* AD STYLES */
+.ad-box{background:#0d0d16;border:1px solid var(--border);border-radius:8px;text-align:center;cursor:pointer;transition:border-color .2s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.ad-box:hover{border-color:var(--accent)}
+.ad-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);opacity:.6}
+.ad-box strong{color:var(--accent);font-size:13px}
+.ad-box p{font-size:10px;color:var(--muted);line-height:1.5}
+.ad-box small{font-size:9px;color:var(--muted);opacity:.5}
+
+/* LEADERBOARD — full width */
+.ad-leaderboard{width:100%;padding:12px;min-height:90px}
+.ad-leaderboard strong{font-size:14px}
+
+/* BREAKING */
+.breaking-bar{background:#c0392b;padding:7px 32px;display:flex;align-items:center;gap:10px;font-size:12px}
+.breaking-tag{background:#fff;color:#c0392b;font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;letter-spacing:1px;flex-shrink:0;text-transform:uppercase}
+
+/* LAYOUT */
+.container{max-width:1280px;margin:0 auto;padding:24px 32px}
+
+/* TOP AD — leaderboard */
+.top-ad-wrap{background:#0a0a0f;border-bottom:1px solid var(--border);padding:10px 32px;display:flex;justify-content:center}
+.top-ad-wrap .ad-box{width:728px;height:90px}
+
+/* MAIN GRID */
+.main-grid{display:grid;grid-template-columns:200px 1fr 280px;gap:24px}
+
+/* LEFT SIDEBAR */
+.left-sidebar{display:flex;flex-direction:column;gap:16px}
+.left-sidebar .ad-box{min-height:600px;width:100%}
+.left-sidebar .ad-box strong{font-size:12px}
+
+/* CAT TABS */
+.cat-row{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;overflow-x:auto}
+.cat-tab{padding:8px 14px;font-size:12px;font-weight:500;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+.cat-tab:hover{color:var(--text)}
+.cat-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* HERO */
+.hero-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px;cursor:pointer;transition:border-color .2s}
+.hero-card:hover{border-color:var(--accent)}
+.hero-visual{height:240px;background:linear-gradient(145deg,#0d1117,#1a1230);display:flex;align-items:flex-end;padding:20px;position:relative}
+.hero-visual::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,rgba(10,10,15,.9),transparent 60%)}
+.hero-cat-badge{position:absolute;top:16px;left:16px;background:var(--accent);color:#0a0a0f;font-size:9px;font-weight:700;padding:4px 10px;border-radius:4px;letter-spacing:1px;text-transform:uppercase;z-index:2}
+.hero-time{position:absolute;top:16px;right:16px;background:rgba(0,0,0,.5);color:var(--muted);font-size:10px;padding:3px 8px;border-radius:4px;z-index:2}
+.hero-title{font-family:'Playfair Display',serif;font-size:21px;font-weight:700;line-height:1.3;color:#fff;position:relative;z-index:2}
+.hero-body{padding:16px 20px}
+.hero-meta{font-size:11px;color:var(--muted);margin-bottom:8px}
+.hero-source{color:var(--accent);font-weight:500}
+.hero-desc{font-size:13px;line-height:1.7;color:#b8b5b0;margin-bottom:10px}
+.read-link{color:var(--accent);font-size:12px;font-weight:500;text-decoration:none;border-bottom:1px solid rgba(232,200,74,.3)}
+
+/* IN-FEED AD (between news) */
+.ad-infeed{width:100%;min-height:80px;padding:12px;margin:12px 0;border-radius:8px}
+.ad-infeed strong{font-size:13px}
+
+/* NEWS GRID 2col */
+.news-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.news-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;cursor:pointer;transition:all .2s}
+.news-card:hover{border-color:var(--accent);background:#16161f}
+.nc-top{display:flex;justify-content:space-between;margin-bottom:6px}
+.nc-cat{font-size:10px;font-weight:600;color:var(--accent);letter-spacing:1px;text-transform:uppercase}
+.nc-time{font-size:10px;color:var(--muted)}
+.nc-title{font-size:12px;font-weight:500;line-height:1.5;margin-bottom:6px}
+.nc-source{font-size:10px;color:var(--muted)}
+
+/* NEWS LIST */
+.news-list{display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.nl-item{background:var(--surface);padding:12px 14px;cursor:pointer;transition:background .15s;display:flex;gap:12px;align-items:center}
+.nl-item:hover{background:#16161f}
+.nl-num{font-size:18px;font-weight:700;color:var(--border);font-family:'Playfair Display',serif;min-width:24px}
+.nl-cat{font-size:9px;color:var(--accent);font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px}
+.nl-title{font-size:12px;font-weight:500;line-height:1.4;margin-bottom:3px}
+.nl-meta{font-size:10px;color:var(--muted)}
+
+/* RIGHT SIDEBAR */
+.right-sidebar{display:flex;flex-direction:column;gap:16px}
+.widget{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.widget-header{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.widget-title{font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+.widget-link{font-size:10px;color:var(--accent);text-decoration:none}
+.market-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
+.market-row:last-child{border:none}
+.market-row:hover{background:#16161f}
+.m-name{font-size:12px;font-weight:500}
+.m-sub{font-size:10px;color:var(--muted)}
+.m-price{font-size:12px;font-weight:500;text-align:right}
+.m-change{font-size:10px;font-weight:500;text-align:right}
+.up{color:var(--green)}.down{color:var(--red)}
+
+/* SIDEBAR ADS */
+.right-sidebar .ad-box{width:100%;min-height:250px}
+.right-sidebar .ad-box.tall{min-height:500px}
+
+/* EMAIL */
+.email-widget{padding:14px}
+.email-widget p{font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:10px}
+.email-widget input{width:100%;background:#0a0a0f;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;font-family:inherit;margin-bottom:7px;outline:none;transition:border-color .2s}
+.email-widget input:focus{border-color:var(--accent)}
+.email-widget button{width:100%;background:var(--accent);color:#0a0a0f;border:none;border-radius:6px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.email-widget button:hover{opacity:.85}
+
+/* XBOT */
+.xbot{padding:14px}
+.xbot-status{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.xbot-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.xbot-label{font-size:11px;font-weight:500}
+.xbot-stats{font-size:10px;color:var(--muted);line-height:2}
+.xbot-stats b{color:var(--text)}
+.last-tweet{background:#0a0a0f;border-radius:6px;padding:8px 10px;font-size:10px;color:var(--muted);margin-top:8px;font-family:monospace;line-height:1.6;border-left:2px solid var(--accent)}
+
+/* TRENDING */
+.trend-item{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
+.trend-item:last-child{border:none}
+.trend-item:hover{background:#16161f}
+.trend-rank{font-size:16px;font-weight:700;color:var(--border);font-family:'Playfair Display',serif;min-width:18px}
+.trend-name{font-size:12px;font-weight:500}
+.trend-count{font-size:10px;color:var(--muted)}
+.trend-right{margin-left:auto;font-size:10px;color:var(--accent)}
+
+/* BOTTOM AD STRIP */
+.bottom-ad-strip{background:#0a0a0f;border-top:1px solid var(--border);padding:16px 32px;display:flex;justify-content:center;gap:16px}
+.bottom-ad-strip .ad-box{width:300px;min-height:100px}
+
+/* STICKY MOBILE BOTTOM */
+.sticky-bottom-ad{display:none;position:fixed;bottom:0;left:0;right:0;background:#0d0d16;border-top:1px solid var(--border);padding:8px;z-index:999;justify-content:center}
+@media(max-width:768px){
+  .sticky-bottom-ad{display:flex}
+  .main-grid{grid-template-columns:1fr}
+  .left-sidebar{display:none}
+  nav{display:none}
+}
+
+/* LOAD MORE */
+.load-more{width:100%;background:transparent;border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit;transition:all .2s;margin-top:12px}
+.load-more:hover{border-color:var(--accent);color:var(--accent)}
+
+/* FOOTER */
+footer{border-top:1px solid var(--border);padding:24px 32px;margin-top:0}
+.footer-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.footer-logo{font-family:'Playfair Display',serif;font-size:20px;font-weight:900}
+.footer-logo span{color:var(--accent)}
+.footer-links{display:flex;gap:20px;font-size:11px}
+.footer-links a{color:var(--muted);text-decoration:none;transition:color .2s}
+.footer-links a:hover{color:var(--accent)}
+.footer-bottom{font-size:10px;color:var(--muted);border-top:1px solid var(--border);padding-top:12px;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<!-- TICKER -->
+<div class="ticker-bar">
+  <div class="ticker-inner">
+    <span class="ticker-item">BIST100 <b class="tick-up">▲ 8.542 (+1.2%)</b></span>
+    <span class="ticker-item">USD/TRY <b class="tick-up">▲ 32.84 (+0.4%)</b></span>
+    <span class="ticker-item">EUR/TRY <b class="tick-down">▼ 35.21 (-0.1%)</b></span>
+    <span class="ticker-item">ALTIN <b class="tick-up">▲ 2.418 (+0.8%)</b></span>
+    <span class="ticker-item">BTC/USD <b class="tick-up">▲ 67.420 (+2.1%)</b></span>
+    <span class="ticker-item">ETH/USD <b class="tick-down">▼ 3.280 (-0.5%)</b></span>
+    <span class="ticker-item">S&amp;P500 <b class="tick-up">▲ 5.204 (+0.7%)</b></span>
+    <span class="ticker-item">PETROL <b class="tick-down">▼ 87.32 (-0.6%)</b></span>
+    <span class="ticker-item">BIST100 <b class="tick-up">▲ 8.542 (+1.2%)</b></span>
+    <span class="ticker-item">USD/TRY <b class="tick-up">▲ 32.84 (+0.4%)</b></span>
+    <span class="ticker-item">EUR/TRY <b class="tick-down">▼ 35.21 (-0.1%)</b></span>
+    <span class="ticker-item">ALTIN <b class="tick-up">▲ 2.418 (+0.8%)</b></span>
+    <span class="ticker-item">BTC/USD <b class="tick-up">▲ 67.420 (+2.1%)</b></span>
+    <span class="ticker-item">ETH/USD <b class="tick-down">▼ 3.280 (-0.5%)</b></span>
+    <span class="ticker-item">S&amp;P500 <b class="tick-up">▲ 5.204 (+0.7%)</b></span>
+    <span class="ticker-item">PETROL <b class="tick-down">▼ 87.32 (-0.6%)</b></span>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div style="display:flex;align-items:center">
+    <div class="logo">Anlık<span>Haber</span></div>
+    <div class="logo-sub">anlikhaber.com</div>
+  </div>
+  <nav>
+    <a href="#" class="active">Ana Sayfa</a>
+    <a href="#">Piyasalar</a>
+    <a href="#">Ekonomi</a>
+    <a href="#">Kripto</a>
+    <a href="#">Borsa</a>
+    <a href="#">Döviz</a>
+    <a href="#">Altın</a>
+    <a href="#">Analiz</a>
+  </nav>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-size:11px;color:var(--muted)" id="clockEl">—</span>
+    <span class="live-badge">● Canlı</span>
+  </div>
+</header>
+
+<!-- AD 1 — LEADERBOARD (728x90) header altı -->
+<div class="top-ad-wrap">
+  <div class="ad-box ad-leaderboard" onclick="adClick('Leaderboard 728x90 — Header Altı')">
+    <div class="ad-label">Reklam · Google AdSense</div>
+    <strong>728 × 90 — Leaderboard</strong>
+    <p>En görünür reklam alanı · CPM $3–10 · Finans okuyucu kitlesi</p>
+    <small>publisher-id buraya · ca-pub-XXXXXXXXXXXXXXXX</small>
+  </div>
+</div>
+
+<!-- BREAKING -->
+<div class="breaking-bar">
+  <div class="breaking-tag">Son Dakika</div>
+  <div id="breakingText">Fed faiz kararını açıkladı — BIST 100 yüzde 1.2 yükseldi, dolar 32.84'e geriledi</div>
+</div>
+
+<!-- MAIN -->
+<div class="container">
+  <div class="main-grid">
+
+    <!-- SOL SIDEBAR — 160x600 + 160x600 -->
+    <div class="left-sidebar">
+      <div class="ad-box" style="min-height:280px" onclick="adClick('Sol Sidebar 160x600 üst')">
+        <div class="ad-label">Reklam</div>
+        <strong>160×600</strong>
+        <p>Wide Skyscraper<br>CPM $4–12</p>
+        <small>AdSense</small>
+      </div>
+      <div class="ad-box" style="min-height:280px" onclick="adClick('Sol Sidebar 160x600 alt')">
+        <div class="ad-label">Reklam</div>
+        <strong>160×600</strong>
+        <p>Wide Skyscraper<br>CPM $4–12</p>
+        <small>AdSense</small>
+      </div>
+      <!-- Kripto/finans şirket sponsorluğu -->
+      <div class="ad-box" style="min-height:160px;border-color:#f7931a33" onclick="adClick('Kripto Sponsor Alanı')">
+        <div class="ad-label">Sponsorlu</div>
+        <strong style="color:#f7931a">Kripto Sponsor</strong>
+        <p style="font-size:10px">Borsanızı buraya<br>tanıtın</p>
+        <small>reklam@anlikhaber.com</small>
+      </div>
+    </div>
+
+    <!-- ORTA İÇERİK -->
+    <div>
+      <!-- CAT TABS -->
+      <div class="cat-row">
+        <div class="cat-tab active" onclick="filterCat('hepsi',this)">Tümü</div>
+        <div class="cat-tab" onclick="filterCat('piyasa',this)">📈 Piyasalar</div>
+        <div class="cat-tab" onclick="filterCat('kripto',this)">₿ Kripto</div>
+        <div class="cat-tab" onclick="filterCat('ekonomi',this)">🏛 Ekonomi</div>
+        <div class="cat-tab" onclick="filterCat('borsa',this)">📊 Borsa</div>
+        <div class="cat-tab" onclick="filterCat('kur',this)">💱 Döviz</div>
+        <div class="cat-tab" onclick="filterCat('altin',this)">🥇 Altın</div>
+      </div>
+
+      <!-- HERO -->
+      <div class="hero-card" id="heroCard">
+        <div class="hero-visual">
+          <div class="hero-cat-badge" id="heroCat">HABER</div>
+          <div class="hero-time" id="heroTime">—</div>
+          <div class="hero-title" id="heroTitle">Haberler yükleniyor...</div>
+        </div>
+        <div class="hero-body">
+          <div class="hero-meta"><span class="hero-source" id="heroSource">—</span> · <span id="heroMeta2">anlikhaber.com</span></div>
+          <div class="hero-desc" id="heroDesc">Lütfen bekleyin...</div>
+          <a class="read-link" id="heroLink" href="#" target="_blank">Haberin tamamını oku →</a>
+        </div>
+      </div>
+
+      <!-- AD 2 — IN-FEED (haberin hemen altında) -->
+      <div class="ad-box ad-infeed" onclick="adClick('In-Feed 728x90 — Hero Altı')">
+        <div class="ad-label">Reklam · Google AdSense</div>
+        <strong>In-Feed Reklam — 728×90</strong>
+        <p>İçerik arası en yüksek CTR formatı · CPM $5–15</p>
+      </div>
+
+      <!-- NEWS GRID -->
+      <div class="news-grid" id="newsGrid"></div>
+
+      <!-- AD 3 — IN-FEED (haber grid altında) -->
+      <div class="ad-box ad-infeed" onclick="adClick('In-Feed Native — Haber Grid Altı')">
+        <div class="ad-label">Reklam · Native Ad</div>
+        <strong>Native Reklam Alanı</strong>
+        <p>Finans & Kripto şirketleri için · reklam@anlikhaber.com · CPM $8–20</p>
+      </div>
+
+      <!-- NEWS LIST -->
+      <div class="news-list" id="newsList"></div>
+
+      <!-- AD 4 — IN-FEED (liste ortası) -->
+      <div class="ad-box ad-infeed" onclick="adClick('In-Feed 300x250 — Liste Altı')">
+        <div class="ad-label">Reklam · Google AdSense</div>
+        <strong>300×250 — Medium Rectangle</strong>
+        <p>Liste arası · CPM $4–12</p>
+      </div>
+
+      <!-- DAHA FAZLA HABER LİSTESİ -->
+      <div class="news-list" id="newsList2"></div>
+
+      <!-- AD 5 — SAYFA SONU -->
+      <div class="ad-box ad-infeed" style="min-height:90px;margin-top:16px" onclick="adClick('Sayfa Sonu Leaderboard')">
+        <div class="ad-label">Reklam · Google AdSense</div>
+        <strong>728×90 — Sayfa Sonu Leaderboard</strong>
+        <p>CPM $3–8</p>
+      </div>
+
+      <button class="load-more" onclick="loadMore()">Daha Fazla Haber Yükle ↓</button>
+    </div>
+
+    <!-- SAĞ SIDEBAR -->
+    <div class="right-sidebar">
+
+      <!-- AD 6 — 300x250 sidebar üst -->
+      <div class="ad-box" style="min-height:250px" onclick="adClick('Sağ Sidebar 300x250 — Üst')">
+        <div class="ad-label">Reklam · Google AdSense</div>
+        <strong>300×250</strong>
+        <p>Medium Rectangle<br>En yüksek tıklama<br>CPM $5–15</p>
+      </div>
+
+      <!-- MARKETS -->
+      <div class="widget">
+        <div class="widget-header">
+          <div class="widget-title">Canlı Piyasalar</div>
+          <a href="#" class="widget-link">Tümü →</a>
+        </div>
+        <div class="market-row"><div><div class="m-name">BIST 100</div><div class="m-sub">Borsa İstanbul</div></div><div><div class="m-price">8.542</div><div class="m-change up">▲ +1.24%</div></div></div>
+        <div class="market-row"><div><div class="m-name">USD/TRY</div><div class="m-sub">Dolar/Lira</div></div><div><div class="m-price">32.84</div><div class="m-change up">▲ +0.41%</div></div></div>
+        <div class="market-row"><div><div class="m-name">EUR/TRY</div><div class="m-sub">Euro/Lira</div></div><div><div class="m-price">35.21</div><div class="m-change down">▼ -0.12%</div></div></div>
+        <div class="market-row"><div><div class="m-name">Altın (ONS)</div><div class="m-sub">Spot</div></div><div><div class="m-price">$2.418</div><div class="m-change up">▲ +0.83%</div></div></div>
+        <div class="market-row"><div><div class="m-name">Bitcoin</div><div class="m-sub">BTC/USD</div></div><div><div class="m-price">$67.420</div><div class="m-change up">▲ +2.14%</div></div></div>
+        <div class="market-row"><div><div class="m-name">Petrol Brent</div><div class="m-sub">Vadeli</div></div><div><div class="m-price">$87.32</div><div class="m-change down">▼ -0.55%</div></div></div>
+      </div>
+
+      <!-- AD 7 — 300x250 sidebar orta -->
+      <div class="ad-box" style="min-height:250px" onclick="adClick('Sağ Sidebar 300x250 — Orta')">
+        <div class="ad-label">Reklam · Google AdSense</div>
+        <strong>300×250</strong>
+        <p>Medium Rectangle<br>CPM $5–15</p>
+      </div>
+
+      <!-- TRENDING -->
+      <div class="widget">
+        <div class="widget-header">
+          <div class="widget-title">Trend Konular</div>
+        </div>
+        <div class="trend-item"><div class="trend-rank">1</div><div><div class="trend-name">Faiz Kararı</div><div class="trend-count">2.4K okuma</div></div><div class="trend-right">▲</div></div>
+        <div class="trend-item"><div class="trend-rank">2</div><div><div class="trend-name">Bitcoin</div><div class="trend-count">1.8K okuma</div></div><div class="trend-right">▲</div></div>
+        <div class="trend-item"><div class="trend-rank">3</div><div><div class="trend-name">BIST 100</div><div class="trend-count">1.2K okuma</div></div><div class="trend-right">▲</div></div>
+        <div class="trend-item"><div class="trend-rank">4</div><div><div class="trend-name">Dolar/TL</div><div class="trend-count">980 okuma</div></div><div class="trend-right">→</div></div>
+        <div class="trend-item"><div class="trend-rank">5</div><div><div class="trend-name">Altın</div><div class="trend-count">754 okuma</div></div><div class="trend-right">▲</div></div>
+      </div>
+
+      <!-- EMAIL -->
+      <div class="widget">
+        <div class="widget-header"><div class="widget-title">Günlük Bülten</div></div>
+        <div class="email-widget">
+          <p>Her sabah 07:00'de piyasa özeti e-postanıza gelsin.</p>
+          <input type="email" id="emailInput" placeholder="e-posta@adresiniz.com">
+          <button onclick="subscribe()">Ücretsiz Abone Ol</button>
+        </div>
+      </div>
+
+      <!-- AD 8 — Kripto sponsor -->
+      <div class="ad-box" style="min-height:180px;border-color:#f7931a44" onclick="adClick('Kripto Borsası Sponsor')">
+        <div class="ad-label">Sponsorlu İçerik</div>
+        <strong style="color:#f7931a">Kripto Borsası</strong>
+        <p>Binance, Coinbase,<br>Bitexen vb. için<br>sponsor alanı</p>
+        <small>reklam@anlikhaber.com</small>
+      </div>
+
+      <!-- X BOT -->
+      <div class="widget">
+        <div class="widget-header">
+          <div class="widget-title">X Bot Durumu</div>
+          <a href="https://x.com/anlikhaber" class="widget-link" target="_blank">@anlikhaber →</a>
+        </div>
+        <div class="xbot">
+          <div class="xbot-status">
+            <div class="xbot-dot"></div>
+            <div class="xbot-label">Bot aktif — otomatik paylaşım</div>
+          </div>
+          <div class="xbot-stats">
+            Son tweet: <b>18 dk önce</b><br>
+            Bugün: <b>42 paylaşım</b><br>
+            Takipçi: <b>1.284</b>
+          </div>
+          <div class="last-tweet">📊 Fed faiz kararını açıkladı! → anlikhaber.com #faiz #Fed #borsa</div>
+        </div>
+      </div>
+
+      <!-- AD 9 — 300x600 sidebar alt (en değerli) -->
+      <div class="ad-box" style="min-height:500px" onclick="adClick('Sağ Sidebar 300x600 — Half Page (EN DEĞERLİ)')">
+        <div class="ad-label">Reklam · Google AdSense</div>
+        <strong>300×600</strong>
+        <p>Half Page Banner<br>En yüksek CPM format<br>$8–25</p>
+        <small>Finans sektörü reklamları</small>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM AD STRIP — 3x300x100 -->
+<div class="bottom-ad-strip">
+  <div class="ad-box" style="min-height:100px;flex:1;max-width:300px" onclick="adClick('Footer Sol 300x100')">
+    <div class="ad-label">Reklam</div><strong>300×100</strong><p>Footer Sol</p>
+  </div>
+  <div class="ad-box" style="min-height:100px;flex:1;max-width:300px;border-color:#e8c84a55" onclick="adClick('Footer Orta — Sponsor')">
+    <div class="ad-label">Sponsor</div><strong style="color:var(--accent)">Finans Şirketi</strong><p>reklam@anlikhaber.com</p>
+  </div>
+  <div class="ad-box" style="min-height:100px;flex:1;max-width:300px" onclick="adClick('Footer Sağ 300x100')">
+    <div class="ad-label">Reklam</div><strong>300×100</strong><p>Footer Sağ</p>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-top">
+    <div class="footer-logo">Anlık<span>Haber</span> <span style="font-size:10px;color:var(--muted);font-family:'DM Sans',sans-serif;font-weight:300">anlikhaber.com</span></div>
+    <div class="footer-links">
+      <a href="#">Hakkımızda</a>
+      <a href="#">Reklam Ver</a>
+      <a href="#">İletişim</a>
+      <a href="#">Gizlilik</a>
+      <a href="#">KVKK</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2025 AnlıkHaber · anlikhaber.com · Tüm hakları saklıdır.</span>
+    <span>Bu sitedeki bilgiler yatırım tavsiyesi niteliği taşımaz.</span>
+  </div>
+</footer>
+
+<!-- MOBİL STICKY BOTTOM AD -->
+<div class="sticky-bottom-ad">
+  <div class="ad-box" style="width:320px;min-height:50px;flex-direction:row;gap:8px;padding:8px 12px" onclick="adClick('Mobil Sticky Bottom 320x50')">
+    <div class="ad-label">Reklam</div>
+    <strong style="font-size:12px">Mobil Sticky 320×50</strong>
+    <p style="font-size:10px">CPM $4–10</p>
+  </div>
+</div>
+
+<script>
+const DEMO_NEWS=[
+  {title:"Fed faiz kararını açıkladı: Küresel piyasalar sert tepki verdi",description:"Amerikan Merkez Bankası Federal Rezerv'in faiz kararı küresel piyasalarda büyük dalgalanmaya neden oldu.",source:{name:"Reuters"},publishedAt:"2025-04-29T10:30:00Z",url:"#",category:"ekonomi"},
+  {title:"Bitcoin 70.000 dolara yaklaşıyor — analistler hedef fiyat güncelledi",description:"Kripto para lideri Bitcoin son 3 ayın en yüksek seviyesine ulaştı. Yıl sonu hedefi 90.000 dolar.",source:{name:"CoinDesk"},publishedAt:"2025-04-29T09:15:00Z",url:"#",category:"kripto"},
+  {title:"BIST 100 güçlü seyriyle 8.500 puanı geçti",description:"Türkiye borsası yabancı alımlar ve olumlu küresel havayla yükselişini sürdürüyor.",source:{name:"Borsa Gündem"},publishedAt:"2025-04-29T08:45:00Z",url:"#",category:"borsa"},
+  {title:"Dolar/TL'de kritik hareketlilik: Piyasalar ne bekliyor?",description:"Fed kararı sonrasında dolar Türk Lirası karşısında sert hareket etti.",source:{name:"Bloomberg TR"},publishedAt:"2025-04-29T08:00:00Z",url:"#",category:"kur"},
+  {title:"Altın fiyatları yeni rekora yaklaşıyor",description:"Jeopolitik gerilimler ve güvenli liman talebiyle altın ons fiyatı 2.450 dolar sınırına dayandı.",source:{name:"Finans Haberleri"},publishedAt:"2025-04-29T07:30:00Z",url:"#",category:"altin"},
+  {title:"Ethereum spot ETF onayı tüm piyasayı hareketlendirdi",description:"SEC'in Ethereum ETF başvurularına olumlu yaklaşması altcoin piyasasında yükselişi beraberinde getirdi.",source:{name:"CryptoPanic"},publishedAt:"2025-04-29T07:00:00Z",url:"#",category:"kripto"},
+  {title:"Türkiye enflasyon verisi beklentileri karşıladı",description:"Nisan ayı enflasyon verisi piyasa tahminleriyle örtüşürken Merkez Bankası faiz beklentileri güncellendi.",source:{name:"TÜİK"},publishedAt:"2025-04-29T06:30:00Z",url:"#",category:"ekonomi"},
+  {title:"Avrupa borsaları karışık — DAX yüzde 0.3 geriledi",description:"Frankfurt, Paris ve Londra borsaları makroekonomik veri ve bilançolar etkisiyle karışık seyrediyor.",source:{name:"Bloomberg"},publishedAt:"2025-04-29T06:00:00Z",url:"#",category:"piyasa"},
+  {title:"OPEC+ toplantısı öncesi petrol fiyatı 87 dolarda",description:"OPEC+ üretim politikasını tartışacağı toplantı öncesinde Brent petrolü yatay seyrediyor.",source:{name:"Reuters"},publishedAt:"2025-04-29T05:30:00Z",url:"#",category:"piyasa"},
+  {title:"Borsa İstanbul'da yabancı yatırımcı payı yüzde 38'e yükseldi",description:"Son 3 ayda yabancıların BIST payı 2 puanlık artışla yüzde 38'e ulaştı.",source:{name:"Borsa Gündem"},publishedAt:"2025-04-29T05:00:00Z",url:"#",category:"borsa"},
+  {title:"Gram altın 2.450 lira ile rekor kırdı",description:"Türkiye'de gram altın fiyatı tarihi zirveye ulaşırken uzmanlar yeni hedefleri paylaştı.",source:{name:"Finans TR"},publishedAt:"2025-04-29T04:30:00Z",url:"#",category:"altin"},
+  {title:"Merkez Bankası faiz kararı için geri sayım başladı",description:"TCMB Para Politikası Kurulu toplantısı öncesinde piyasalar faiz beklentilerini fiyatlıyor.",source:{name:"Reuters TR"},publishedAt:"2025-04-29T04:00:00Z",url:"#",category:"ekonomi"},
+];
+
+const catIcons={piyasa:'📈',kripto:'₿',ekonomi:'🏛',borsa:'📊',kur:'💱',altin:'🥇',analiz:'🔍'};
+const breakings=["Fed faiz kararını açıkladı — BIST 100 yüzde 1.2 yükseldi","Bitcoin 70.000 dolara yaklaşıyor — kripto piyasası coştu","Dolar/TL'de kritik hareketlilik: 32.84 seviyesini test ediyor"];
+let bIdx=0;
+setInterval(()=>{bIdx=(bIdx+1)%breakings.length;document.getElementById('breakingText').textContent=breakings[bIdx];},8000);
+
+function timeAgo(d){const m=(Date.now()-new Date(d))/60000;if(m<60)return Math.floor(m)+' dk önce';if(m<1440)return Math.floor(m/60)+' sa önce';return Math.floor(m/1440)+' gün önce';}
+
+let allNews=[...DEMO_NEWS];
+
+function renderAll(news){
+  if(!news.length){document.getElementById('newsGrid').innerHTML='';document.getElementById('newsList').innerHTML='<div style="padding:24px;text-align:center;color:var(--muted)">Bu kategoride haber yok.</div>';return;}
+  const h=news[0];
+  document.getElementById('heroCat').textContent=(h.category||'HABER').toUpperCase();
+  document.getElementById('heroTime').textContent=timeAgo(h.publishedAt);
+  document.getElementById('heroTitle').textContent=h.title;
+  document.getElementById('heroSource').textContent=h.source.name;
+  document.getElementById('heroDesc').textContent=h.description||'';
+  document.getElementById('heroLink').href=h.url;
+
+  document.getElementById('newsGrid').innerHTML=news.slice(1,5).map(n=>`
+    <div class="news-card" onclick="window.open('${n.url}','_blank')">
+      <div class="nc-top"><span class="nc-cat">${catIcons[n.category]||'📰'} ${(n.category||'haber').toUpperCase()}</span><span class="nc-time">${timeAgo(n.publishedAt)}</span></div>
+      <div class="nc-title">${n.title}</div>
+      <div class="nc-source">${n.source.name}</div>
+    </div>`).join('');
+
+  document.getElementById('newsList').innerHTML=news.slice(5,9).map((n,i)=>`
+    <div class="nl-item" onclick="window.open('${n.url}','_blank')">
+      <div class="nl-num">${i+6}</div>
+      <div><div class="nl-cat">${catIcons[n.category]||'📰'} ${(n.category||'').toUpperCase()}</div><div class="nl-title">${n.title}</div><div class="nl-meta">${n.source.name} · ${timeAgo(n.publishedAt)}</div></div>
+    </div>`).join('');
+
+  document.getElementById('newsList2').innerHTML=news.slice(9).map((n,i)=>`
+    <div class="nl-item" onclick="window.open('${n.url}','_blank')">
+      <div class="nl-num">${i+10}</div>
+      <div><div class="nl-cat">${catIcons[n.category]||'📰'} ${(n.category||'').toUpperCase()}</div><div class="nl-title">${n.title}</div><div class="nl-meta">${n.source.name} · ${timeAgo(n.publishedAt)}</div></div>
+    </div>`).join('');
+}
+
+function filterCat(cat,el){
+  document.querySelectorAll('.cat-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderAll(cat==='hepsi'?allNews:allNews.filter(n=>n.category===cat));
+}
+
+function subscribe(){
+  const v=document.getElementById('emailInput').value;
+  if(!v||!v.includes('@')){alert('Geçerli e-posta girin.');return;}
+  alert('✓ Abone oldunuz! Sabah 07:00\'de bülten gelecek.');
+  document.getElementById('emailInput').value='';
+}
+
+function loadMore(){alert('Daha fazla haber yükleniyor...\nRSS + AI bot aktif olduktan sonra gerçek haberler gelecek.');}
+
+function adClick(name){console.log('Ad tıklandı:',name);}
+
+// SAAT
+function updateClock(){
+  const now=new Date();
+  document.getElementById('clockEl').textContent=now.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})+' · '+now.toLocaleDateString('tr-TR',{day:'numeric',month:'long'});
+}
+updateClock();setInterval(updateClock,60000);
+
+// ============================================================
+// RSS + AI BOT ENTEGRASYONU — ayrı Node.js servisi
+// Kurulum için bot kodunu bekleyin
+// API_KEY = 'BURAYA_NEWSAPI_KEY' veya RSS feed URL kullanın
+// ============================================================
+
+
+// ============================================================
+// BACKEND API — Railway.app URL'ini buraya yaz
+// ============================================================
+const API_URL = 'BURAYA_RAILWAY_URL_YAZ';
+// Örnek: 'https://anlikhaber-backend-production.up.railway.app'
+
+async function fetchFromBackend() {
+  if (API_URL === 'BURAYA_RAILWAY_URL_YAZ') {
+    renderAll(allNews);
+    return;
+  }
+  try {
+    const res = await fetch(API_URL + '/api/haberler?limit=50');
+    const data = await res.json();
+    if (data && data.length > 0) {
+      allNews = data;
+      renderAll(allNews);
+      console.log('✓ Backend'den ' + data.length + ' haber yüklendi');
+    }
+  } catch(e) {
+    console.log('Backend bağlanamadı, demo mod:', e.message);
+    renderAll(allNews);
+  }
+}
+
+async function updateXBotStatus() {
+  if (API_URL === 'BURAYA_RAILWAY_URL_YAZ') return;
+  try {
+    const res = await fetch(API_URL + '/api/stats');
+    const stats = await res.json();
+    const el = document.querySelector('.xbot-stats');
+    if (el && stats) {
+      el.innerHTML = `Son tweet: <b>az önce</b><br>Bugün: <b>${stats.tweetAtilanlar} paylaşım</b><br>Toplam haber: <b>${stats.toplamHaber}</b>`;
+    }
+    if (stats.trends && stats.trends.length > 0) {
+      console.log('🔥 TR Trendler:', stats.trends.join(', '));
+    }
+  } catch(e) {}
+}
+
+// Başlangıçta yükle
+fetchFromBackend();
+updateXBotStatus();
+// Her 5 dakikada bir güncelle
+setInterval(fetchFromBackend, 5 * 60 * 1000);
+setInterval(updateXBotStatus, 60 * 1000);
+
+renderAll(allNews);
+</script>
+</body>
+</html>
