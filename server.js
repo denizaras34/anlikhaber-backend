@@ -5,6 +5,7 @@ const cron = require('node-cron');
 const { TwitterApi } = require('twitter-api-v2');
 const Parser = require('rss-parser');
 const slugify = require('slugify');
+const Anthropic = require('@anthropic-ai/sdk');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,21 +23,26 @@ const twitter = new TwitterApi({
   accessSecret: process.env.X_ACCESS_SECRET,
 });
 
-// !! User-Agent'ta sadece ASCII karakter — Türkçe harf yok
+let anthropic = null;
+if (process.env.CLAUDE_API_KEY) {
+  anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+  console.log('Claude AI aktif');
+}
+
 const rssParser = new Parser({
   timeout: 15000,
   headers: { 'User-Agent': 'AnlikHaber/1.0 (+https://anlikhaber.com)' }
 });
 
 const RSS_FEEDS = [
-  { url: 'https://tr.investing.com/rss/news.rss',                      cat: 'finans',  emoji: '📊', kaynak: 'Investing.com TR' },
-  { url: 'https://investing.com/rss/news_1.rss',                       cat: 'doviz',   emoji: '💱', kaynak: 'Investing.com' },
-  { url: 'https://investing.com/rss/news_11.rss',                      cat: 'emtia',   emoji: '🥇', kaynak: 'Investing.com' },
-  { url: 'https://investing.com/rss/news_14.rss',                      cat: 'ekonomi', emoji: '🏛', kaynak: 'Investing.com' },
-  { url: 'https://investing.com/rss/news_25.rss',                      cat: 'borsa',   emoji: '📈', kaynak: 'Investing.com' },
-  { url: 'https://cointelegraph.com/rss',                              cat: 'kripto',  emoji: '₿',  kaynak: 'CoinTelegraph' },
-  { url: 'https://cnbc.com/id/10000664/device/rss/rss.html',          cat: 'finans',  emoji: '📊', kaynak: 'CNBC' },
-  { url: 'https://cnbc.com/id/15839135/device/rss/rss.html',          cat: 'piyasa',  emoji: '📈', kaynak: 'CNBC Markets' },
+  { url: 'https://tr.investing.com/rss/news.rss',             cat: 'finans',  emoji: '📊', kaynak: 'Investing.com TR' },
+  { url: 'https://investing.com/rss/news_1.rss',              cat: 'doviz',   emoji: '💱', kaynak: 'Investing.com' },
+  { url: 'https://investing.com/rss/news_11.rss',             cat: 'emtia',   emoji: '🥇', kaynak: 'Investing.com' },
+  { url: 'https://investing.com/rss/news_14.rss',             cat: 'ekonomi', emoji: '🏛', kaynak: 'Investing.com' },
+  { url: 'https://investing.com/rss/news_25.rss',             cat: 'borsa',   emoji: '📈', kaynak: 'Investing.com' },
+  { url: 'https://cointelegraph.com/rss',                     cat: 'kripto',  emoji: '₿',  kaynak: 'CoinTelegraph' },
+  { url: 'https://cnbc.com/id/10000664/device/rss/rss.html',  cat: 'finans',  emoji: '📊', kaynak: 'CNBC' },
+  { url: 'https://cnbc.com/id/15839135/device/rss/rss.html',  cat: 'piyasa',  emoji: '📈', kaynak: 'CNBC Markets' },
 ];
 
 const CAT_TAGS = {
@@ -49,11 +55,37 @@ const CAT_TAGS = {
   piyasa:  ['#piyasa', '#borsa'],
 };
 
-// Sabit TR finans trendleri — API 403 aldığımız için statik kullanıyoruz
 const STATIC_TRENDS = ['#BIST100', '#dolar', '#altin', '#faiz', '#kripto'];
 
 function createSlug(title) {
   return slugify(title, { lower: true, strict: true, trim: true }).substring(0, 80);
+}
+
+// AI ile Türkçe içerik oluştur
+async function generateTurkishContent(haber) {
+  if (!anthropic) return { title: haber.title, content: haber.description || '' };
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: `Bu haber başlığını ve açıklamasını Türkçeye çevir ve kısa bir haber makalesi yaz (3-4 paragraf). 
+        
+Başlık: ${haber.title}
+Açıklama: ${haber.description || ''}
+Kaynak: ${haber.kaynak}
+
+Sadece JSON formatında dön: {"title": "Türkçe başlık", "content": "Türkçe içerik"}`
+      }]
+    });
+    const text = response.content[0].text.trim();
+    const clean = text.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch(e) {
+    console.log('AI içerik hatası:', e.message);
+    return { title: haber.title, content: haber.description || '' };
+  }
 }
 
 async function fetchAndSaveNews() {
@@ -74,25 +106,61 @@ async function fetchAndSaveNews() {
         const slug = createSlug(title);
         const bizimUrl = `https://anlikhaber.com/haber/${slug}`;
 
+        // AI ile Türkçe içerik oluştur (İngilizce kaynaklar için)
+        let turkishTitle = title;
+        let turkishContent = item.contentSnippet || item.content || item.summary || '';
+
+        if (anthropic && feed.kaynak !== 'Investing.com TR') {
+          const aiContent = await generateTurkishContent({
+            title, description: turkishContent, kaynak: feed.kaynak
+          });
+          turkishTitle = aiContent.title || title;
+          turkishContent = aiContent.content || turkishContent;
+          await sleep(1000); // AI rate limit için bekle
+        }
+
+        // Resim çek — RSS'den veya Open Graph'tan
+        let resim = null;
+        if (item.enclosure && item.enclosure.url) {
+          resim = item.enclosure.url;
+        } else if (item['media:content'] && item['media:content']['$'] && item['media:content']['$'].url) {
+          resim = item['media:content']['$'].url;
+        } else if (item.image) {
+          resim = item.image;
+        }
+
+        // AI notu
+        const aiNotu = anthropic 
+          ? `Bu içerik yapay zeka tarafından ${feed.kaynak} kaynağından derlenerek Türkçeye çevrilmiştir.`
+          : `Bu içerik ${feed.kaynak} kaynağından derlenmiştir.`;
+
         const haber = {
           id: Date.now() + Math.random(),
-          slug, title,
-          description: item.contentSnippet || item.content || '',
-          orijinalUrl, bizimUrl,
+          slug,
+          title: turkishTitle,
+          originalTitle: title,
+          content: turkishContent,
+          description: turkishContent.substring(0, 300),
+          orijinalUrl,
+          bizimUrl,
           kaynak: feed.kaynak,
+          kaynakUrl: orijinalUrl,
+          kaynakDomain: new URL(orijinalUrl).hostname.replace('www.',''),
           cat: feed.cat,
           emoji: feed.emoji,
+          resim,
+          aiNotu,
           tarih: item.pubDate ? new Date(item.pubDate) : new Date(),
           tweetAtildi: false,
         };
 
         haberler.unshift(haber);
         yeni++;
-        if (haberler.length > 200) haberler = haberler.slice(0, 200);
-        console.log('Haber eklendi:', title.substring(0, 60));
+        if (haberler.length > 500) haberler = haberler.slice(0, 500);
+        console.log('Haber eklendi:', turkishTitle.substring(0, 60));
 
         await tweetHaber(haber);
-        await sleep(3000);
+        await sleep(2000);
       }
     } catch (e) {
       console.log('Feed hatasi (' + feed.kaynak + '):', e.message);
@@ -106,7 +174,6 @@ async function tweetHaber(haber) {
   try {
     const catTags = (CAT_TAGS[haber.cat] || ['#finans']).slice(0, 2).join(' ');
     const trendTags = STATIC_TRENDS.slice(0, 2).join(' ');
-
     const tweetText = [
       `${haber.emoji} ${haber.title}`,
       ``,
@@ -131,16 +198,28 @@ async function tweetHaber(haber) {
   }
 }
 
+// API ENDPOINTS
 app.get('/api/haberler', (req, res) => {
   const { cat, limit = 50 } = req.query;
   let data = cat && cat !== 'hepsi' ? haberler.filter(h => h.cat === cat) : haberler;
   res.json(data.slice(0, parseInt(limit)));
 });
 
+// Haber detay sayfası — slug ile
 app.get('/api/haber/:slug', (req, res) => {
   const haber = haberler.find(h => h.slug === req.params.slug);
   if (!haber) return res.status(404).json({ error: 'Bulunamadi' });
   res.json(haber);
+});
+
+// İlgili haberler
+app.get('/api/ilgili/:slug', (req, res) => {
+  const haber = haberler.find(h => h.slug === req.params.slug);
+  if (!haber) return res.status(404).json([]);
+  const ilgili = haberler
+    .filter(h => h.slug !== req.params.slug && h.cat === haber.cat)
+    .slice(0, 4);
+  res.json(ilgili);
 });
 
 app.get('/api/stats', (req, res) => {
