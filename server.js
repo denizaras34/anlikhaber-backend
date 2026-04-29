@@ -10,7 +10,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-
+app.use(cors());
+app.options('*', cors());
 app.use(express.json());
 
 let haberler = [];
@@ -66,7 +67,7 @@ async function generateTurkishContent(haber) {
   if (!anthropic) return { title: haber.title, content: haber.description || '' };
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
       messages: [{
         role: 'user',
