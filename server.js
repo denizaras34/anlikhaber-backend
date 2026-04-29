@@ -231,7 +231,17 @@ app.get('/api/stats', (req, res) => {
     trends: STATIC_TRENDS,
   });
 });
-
+// Canlı piyasa verisi
+app.get('/api/piyasalar', async (req, res) => {
+  try {
+    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,binancecoin&vs_currencies=usd&include_24hr_change=true');
+    const kripto = await r.json();
+    res.json({ kripto, sonGuncelleme: new Date().toISOString() });
+  } catch(e) {
+    res.json({ error: e.message });
+  }
+});
 app.get('/', (req, res) => {
   res.json({ status: 'AnlikHaber Backend calisıyor', haberSayisi: haberler.length });
 });
