@@ -10,8 +10,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.options('*', cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 let haberler = [];
@@ -36,14 +35,24 @@ const rssParser = new Parser({
 });
 
 const RSS_FEEDS = [
-  { url: 'https://tr.investing.com/rss/news.rss',             cat: 'finans',  emoji: '📊', kaynak: 'Investing.com TR' },
-  { url: 'https://investing.com/rss/news_1.rss',              cat: 'doviz',   emoji: '💱', kaynak: 'Investing.com' },
-  { url: 'https://investing.com/rss/news_11.rss',             cat: 'emtia',   emoji: '🥇', kaynak: 'Investing.com' },
-  { url: 'https://investing.com/rss/news_14.rss',             cat: 'ekonomi', emoji: '🏛', kaynak: 'Investing.com' },
-  { url: 'https://investing.com/rss/news_25.rss',             cat: 'borsa',   emoji: '📈', kaynak: 'Investing.com' },
-  { url: 'https://cointelegraph.com/rss',                     cat: 'kripto',  emoji: '₿',  kaynak: 'CoinTelegraph' },
-  { url: 'https://cnbc.com/id/10000664/device/rss/rss.html',  cat: 'finans',  emoji: '📊', kaynak: 'CNBC' },
-  { url: 'https://cnbc.com/id/15839135/device/rss/rss.html',  cat: 'piyasa',  emoji: '📈', kaynak: 'CNBC Markets' },
+  // ===== TÜRKÇE KAYNAKLAR (önce bunlar çekilir) =====
+  { url: 'https://tr.investing.com/rss/news.rss',                          cat: 'finans',  emoji: '📊', kaynak: 'Investing.com TR',  lang: 'tr' },
+  { url: 'https://investing.com/rss/news_1.rss',                           cat: 'doviz',   emoji: '💱', kaynak: 'Investing.com TR',  lang: 'tr' },
+  { url: 'https://investing.com/rss/news_11.rss',                          cat: 'emtia',   emoji: '🥇', kaynak: 'Investing.com TR',  lang: 'tr' },
+  { url: 'https://investing.com/rss/news_14.rss',                          cat: 'ekonomi', emoji: '🏛', kaynak: 'Investing.com TR',  lang: 'tr' },
+  { url: 'https://investing.com/rss/news_25.rss',                          cat: 'borsa',   emoji: '📈', kaynak: 'Investing.com TR',  lang: 'tr' },
+  { url: 'https://www.haberturk.com/rss/ekonomi.xml',                      cat: 'ekonomi', emoji: '🏛', kaynak: 'Haberturk',         lang: 'tr' },
+  { url: 'https://www.haberturk.com/rss/borsa.xml',                        cat: 'borsa',   emoji: '📈', kaynak: 'Haberturk',         lang: 'tr' },
+  { url: 'https://www.bloomberght.com/rss',                                 cat: 'finans',  emoji: '📊', kaynak: 'Bloomberg HT',      lang: 'tr' },
+  { url: 'https://www.cnnturk.com/feed/rss/ekonomi/news',                  cat: 'ekonomi', emoji: '🏛', kaynak: 'CNN Turk',          lang: 'tr' },
+  { url: 'https://www.ntv.com.tr/ekonomi.rss',                             cat: 'ekonomi', emoji: '🏛', kaynak: 'NTV',               lang: 'tr' },
+  { url: 'https://feeds.feedburner.com/paraAnaliz',                        cat: 'analiz',  emoji: '🔍', kaynak: 'Para Analiz',       lang: 'tr' },
+  // ===== İNGİLİZCE KAYNAKLAR (AI çevirir) =====
+  { url: 'https://cointelegraph.com/rss',                                   cat: 'kripto',  emoji: '₿',  kaynak: 'CoinTelegraph',     lang: 'en' },
+  { url: 'https://cnbc.com/id/10000664/device/rss/rss.html',               cat: 'finans',  emoji: '📊', kaynak: 'CNBC',              lang: 'en' },
+  { url: 'https://cnbc.com/id/15839135/device/rss/rss.html',               cat: 'piyasa',  emoji: '📈', kaynak: 'CNBC Markets',      lang: 'en' },
+  { url: 'https://feeds.bloomberg.com/markets/news.rss',                   cat: 'piyasa',  emoji: '📈', kaynak: 'Bloomberg',         lang: 'en' },
+  { url: 'https://feeds.reuters.com/reuters/businessNews',                  cat: 'ekonomi', emoji: '🏛', kaynak: 'Reuters',           lang: 'en' },
 ];
 
 const CAT_TAGS = {
@@ -67,7 +76,7 @@ async function generateTurkishContent(haber) {
   if (!anthropic) return { title: haber.title, content: haber.description || '' };
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 500,
       messages: [{
         role: 'user',
@@ -107,17 +116,28 @@ async function fetchAndSaveNews() {
         const slug = createSlug(title);
         const bizimUrl = `https://anlikhaber.com/haber/${slug}`;
 
-        // AI ile Türkçe içerik oluştur (İngilizce kaynaklar için)
+        // Türkçe/İngilizce içerik işleme
         let turkishTitle = title;
         let turkishContent = item.contentSnippet || item.content || item.summary || '';
+        let isTranslated = false;
 
-        if (anthropic && feed.kaynak !== 'Investing.com TR') {
-          const aiContent = await generateTurkishContent({
-            title, description: turkishContent, kaynak: feed.kaynak
-          });
-          turkishTitle = aiContent.title || title;
-          turkishContent = aiContent.content || turkishContent;
-          await sleep(1000); // AI rate limit için bekle
+        if (feed.lang === 'en' && anthropic) {
+          // İngilizce kaynak — AI ile Türkçeye çevir
+          try {
+            const aiContent = await generateTurkishContent({
+              title, description: turkishContent, kaynak: feed.kaynak
+            });
+            turkishTitle = aiContent.title || title;
+            turkishContent = aiContent.content || turkishContent;
+            isTranslated = true;
+            await sleep(1500);
+          } catch(e) {
+            // AI çevirisi başarısız — orijinal + not ekle
+            turkishContent = (turkishContent || '') + '\n\nDetaylar için kaynağı ziyaret edin: ' + feed.kaynak;
+          }
+        } else if (feed.lang === 'en' && !anthropic) {
+          // AI yok — İngilizce habere not ekle
+          turkishContent = (turkishContent || title) + '\n\nBu haber ' + feed.kaynak + ' kaynağından alınmıştır. Detaylar için kaynağı ziyaret edin.';
         }
 
         // Resim çek — RSS'den veya Open Graph'tan
@@ -131,9 +151,14 @@ async function fetchAndSaveNews() {
         }
 
         // AI notu
-        const aiNotu = anthropic 
-          ? `Bu içerik yapay zeka tarafından ${feed.kaynak} kaynağından derlenerek Türkçeye çevrilmiştir.`
-          : `Bu içerik ${feed.kaynak} kaynağından derlenmiştir.`;
+        let aiNotu = '';
+        if (feed.lang === 'tr') {
+          aiNotu = `Bu içerik ${feed.kaynak} kaynağından derlenmiştir.`;
+        } else if (isTranslated) {
+          aiNotu = `Bu içerik yapay zeka tarafından ${feed.kaynak} (İngilizce) kaynağından Türkçeye çevrilmiştir.`;
+        } else {
+          aiNotu = `Bu içerik ${feed.kaynak} kaynağından alınmıştır. Detaylar için kaynağı ziyaret edin.`;
+        }
 
         const haber = {
           id: Date.now() + Math.random(),
@@ -231,17 +256,7 @@ app.get('/api/stats', (req, res) => {
     trends: STATIC_TRENDS,
   });
 });
-// Canlı piyasa verisi
-app.get('/api/piyasalar', async (req, res) => {
-  try {
-    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,binancecoin&vs_currencies=usd&include_24hr_change=true');
-    const kripto = await r.json();
-    res.json({ kripto, sonGuncelleme: new Date().toISOString() });
-  } catch(e) {
-    res.json({ error: e.message });
-  }
-});
+
 app.get('/', (req, res) => {
   res.json({ status: 'AnlikHaber Backend calisıyor', haberSayisi: haberler.length });
 });
