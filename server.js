@@ -298,6 +298,94 @@ app.get('/sitemap.xml', (req, res) => {
   res.send(xml);
 });
 
+// Brevo Email Abonelik Endpoint
+app.post('/api/abone', async (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'Geçersiz email' });
+  }
+
+  try {
+    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+    
+    // Brevo'ya abone ekle
+    const response = await fetch('https://api.brevo.com/v3/contacts', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key': process.env.BREVO_API_KEY
+      },
+      body: JSON.stringify({
+        email,
+        listIds: [2],
+        updateEnabled: true,
+        attributes: {
+          SOURCE: 'anlikhaber.com'
+        }
+      })
+    });
+
+    if (response.ok || response.status === 204) {
+      // Hoşgeldin maili gönder
+      await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'content-type': 'application/json',
+          'api-key': process.env.BREVO_API_KEY
+        },
+        body: JSON.stringify({
+          sender: { name: 'AnlıkHaber', email: 'yonetim@anlikhaber.com' },
+          to: [{ email }],
+          subject: 'AnlıkHaber Bültenine Hoş Geldiniz! 📊',
+          htmlContent: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0f;color:#f0ede8;padding:32px;border-radius:12px">
+              <h1 style="color:#e8c84a;font-size:28px;margin-bottom:8px">AnlıkHaber</h1>
+              <p style="color:#6b6b80;font-size:12px;margin-bottom:32px">anlikhaber.com</p>
+              <h2 style="font-size:22px;margin-bottom:16px">Bültenimize Hoş Geldiniz! 🎉</h2>
+              <p style="color:#b8b5b0;line-height:1.8;margin-bottom:20px">
+                Her sabah 07:00'de Türkiye ve dünyadan en önemli finans haberlerini, 
+                piyasa gelişmelerini ve ekonomi analizlerini e-postanıza gönderiyoruz.
+              </p>
+              <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:20px;margin-bottom:24px">
+                <h3 style="color:#e8c84a;margin-bottom:12px">Bültenimizde neler var?</h3>
+                <ul style="color:#b8b5b0;line-height:2;padding-left:20px">
+                  <li>📈 BIST 100 ve dünya borsaları</li>
+                  <li>💱 Döviz ve altın güncellemeleri</li>
+                  <li>₿ Kripto para haberleri</li>
+                  <li>🏛 Ekonomi ve Merkez Bankası gelişmeleri</li>
+                  <li>📊 Uzman analizleri</li>
+                </ul>
+              </div>
+              <a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">
+                Siteyi Ziyaret Et →
+              </a>
+              <p style="color:#6b6b80;font-size:11px;margin-top:32px">
+                Bu maili almak istemiyorsanız <a href="#" style="color:#e8c84a">abonelikten çıkın</a>.<br>
+                © 2025 AnlıkHaber · anlikhaber.com · reklam@anlikhaber.com
+              </p>
+            </div>
+          `
+        })
+      });
+
+      res.json({ success: true, message: 'Abone oldunuz!' });
+    } else {
+      const err = await response.json();
+      // Zaten abone ise de başarılı say
+      if (err.code === 'duplicate_parameter') {
+        res.json({ success: true, message: 'Zaten abonesiniz!' });
+      } else {
+        res.status(400).json({ error: err.message });
+      }
+    }
+  } catch(e) {
+    console.log('Brevo hatası:', e.message);
+    res.status(500).json({ error: 'Sunucu hatası' });
+  }
+});
+
 // Sitemap endpoint - Google SEO için
 app.get('/sitemap.xml', (req, res) => {
   const urls = haberler.slice(0, 100).map(h => `
