@@ -87,7 +87,7 @@ async function generateTurkishContent(haber) {
   if (!anthropic) return { title: haber.title, content: haber.description || '' };
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
       messages: [{
         role: 'user',
@@ -445,12 +445,8 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 cron.schedule('*/30 * * * *', fetchAndSaveNews);
 
-// Saatte 3 tweet - her 20 dakikada bir 1 tweet
-const tweetKuyrugu = [];
-let tweetKuyrukIndex = 0;
-
-cron.schedule('*/20 * * * *', async () => {
-  // Tweet atılmamış haberleri bul
+// Günde 10 tweet - her 2.5 saatte bir 1 tweet (haftada ~70 tweet)
+cron.schedule('0 */2 * * *', async () => {
   const bekleyenler = haberler.filter(h => !h.tweetAtildi && !postedUrls.has(h.orijinalUrl));
   
   if (bekleyenler.length === 0) {
@@ -458,10 +454,9 @@ cron.schedule('*/20 * * * *', async () => {
     return;
   }
 
-  // En yeni haberi al
   const haber = bekleyenler[0];
   await tweetHaber(haber);
-  console.log('Saatlik tweet gönderildi:', haber.title.substring(0, 50));
+  console.log('Tweet gönderildi:', haber.title.substring(0, 50));
 });
 
 app.listen(PORT, async () => {
