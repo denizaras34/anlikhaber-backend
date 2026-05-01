@@ -41,8 +41,8 @@ const RSS_FEEDS = [
   { url: 'https://tr.investing.com/rss/news_11.rss', cat: 'emtia',   emoji: '🥇', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
   { url: 'https://tr.investing.com/rss/news_14.rss', cat: 'ekonomi', emoji: '🏛', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
   { url: 'https://tr.investing.com/rss/news_25.rss', cat: 'borsa',   emoji: '📈', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
-  { url: 'https://www.haberturk.com/rss/ekonomi.xml',                      cat: 'ekonomi', emoji: '🏛', kaynak: 'Haberturk',         lang: 'tr' },
-  { url: 'https://www.haberturk.com/rss/borsa.xml',                        cat: 'borsa',   emoji: '📈', kaynak: 'Haberturk',         lang: 'tr' },
+  { url: 'https://www.haberturk.com/rss/finans.xml',                      cat: 'ekonomi', emoji: '🏛', kaynak: 'Haberturk',         lang: 'tr' },
+  // { url: 'https://www.haberturk.com/rss/borsa.xml',                        cat: 'borsa',   emoji: '📈', kaynak: 'Haberturk',         lang: 'tr' },
   { url: 'https://www.bloomberght.com/rss',                                 cat: 'finans',  emoji: '📊', kaynak: 'Bloomberg HT',      lang: 'tr' },
   { url: 'https://www.cnnturk.com/feed/rss/ekonomi/news',                  cat: 'ekonomi', emoji: '🏛', kaynak: 'CNN Turk',          lang: 'tr' },
   { url: 'https://www.ntv.com.tr/ekonomi.rss',                             cat: 'ekonomi', emoji: '🏛', kaynak: 'NTV',               lang: 'tr' },
@@ -88,21 +88,26 @@ async function generateTurkishContent(haber) {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
+      max_tokens: 400,
       messages: [{
         role: 'user',
-        content: `Bu haber başlığını ve açıklamasını Türkçeye çevir ve kısa bir haber makalesi yaz (3-4 paragraf). 
-        
-Başlık: ${haber.title}
-Açıklama: ${haber.description || ''}
-Kaynak: ${haber.kaynak}
+        content: `Translate this financial news to Turkish. Return ONLY valid JSON, no extra text.
 
-Sadece JSON formatında dön: {"title": "Türkçe başlık", "content": "Türkçe içerik"}`
+Title: ${haber.title.substring(0, 100)}
+Description: ${(haber.description || '').substring(0, 200)}
+
+Return: {"title":"Turkish title here","content":"Turkish content 2-3 sentences here"}`
       }]
     });
     const text = response.content[0].text.trim();
-    const clean = text.replace(/```json|```/g, '').trim();
-    return JSON.parse(clean);
+    // JSON'u güvenli şekilde parse et
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('JSON bulunamadı');
+    const parsed = JSON.parse(match[0]);
+    return {
+      title: (parsed.title || haber.title).substring(0, 200),
+      content: (parsed.content || haber.description || '').substring(0, 500)
+    };
   } catch(e) {
     console.log('AI içerik hatası:', e.message);
     return { title: haber.title, content: haber.description || '' };
