@@ -274,6 +274,33 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+// RSS Feed endpoint - Zapier için
+app.get('/rss', (req, res) => {
+  const items = haberler.slice(0, 20).map(h => `
+    <item>
+      <title><![CDATA[${h.title || ''}]]></title>
+      <link>${h.bizimUrl || h.orijinalUrl || ''}</link>
+      <description><![CDATA[${h.description || ''}]]></description>
+      <pubDate>${new Date(h.tarih || Date.now()).toUTCString()}</pubDate>
+      <guid>${h.bizimUrl || h.orijinalUrl || ''}</guid>
+      <category>${h.cat || 'finans'}</category>
+    </item>`).join('');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>AnlıkHaber - Son Dakika Finans Haberleri</title>
+    <link>https://anlikhaber.com</link>
+    <description>Türkiye ve dünyadan anlık finans haberleri</description>
+    <language>tr</language>
+    ${items}
+  </channel>
+</rss>`;
+
+  res.set('Content-Type', 'application/rss+xml');
+  res.send(xml);
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'AnlikHaber Backend calisıyor', haberSayisi: haberler.length });
 });
