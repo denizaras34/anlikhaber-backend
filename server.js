@@ -334,6 +334,12 @@ app.get('/rss', (req, res) => {
   res.send(xml);
 });
 
+// Test bülten endpoint
+app.get('/api/test-bulten', async (req, res) => {
+  res.json({ mesaj: 'Bülten gönderiliyor...' });
+  await gunlukBultenGonder();
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'AnlikHaber Backend calisıyor', haberSayisi: haberler.length });
 });
