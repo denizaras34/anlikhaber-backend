@@ -15,6 +15,7 @@ app.use(express.json());
 
 let haberler = [];
 let postedUrls = new Set();
+const goruntulenmeSayaci = {}; // slug -> sayi
 
 const twitter = new TwitterApi({
   appKey:       process.env.X_API_KEY,
@@ -214,7 +215,19 @@ async function tweetHaber(haber) {
 app.get('/api/haberler', (req, res) => {
   const { cat, limit = 50 } = req.query;
   let data = cat && cat !== 'hepsi' ? haberler.filter(h => h.cat === cat) : haberler;
-  res.json(data.slice(0, parseInt(limit)));
+  // Görüntülenme sayısını ekle
+  const dataWithViews = data.slice(0, parseInt(limit)).map(h => ({
+    ...h,
+    goruntulenmeSayisi: goruntulenmeSayaci[h.slug] || 0
+  }));
+  res.json(dataWithViews);
+});
+
+// Görüntülenme say
+app.post('/api/goruntulendi/:slug', (req, res) => {
+  const slug = req.params.slug;
+  goruntulenmeSayaci[slug] = (goruntulenmeSayaci[slug] || 0) + 1;
+  res.json({ ok: true, sayi: goruntulenmeSayaci[slug] });
 });
 
 app.get('/api/haber/:slug', (req, res) => {
@@ -327,8 +340,159 @@ app.get('/', (req, res) => {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// ============ SABAH BÜLTENİ ============
+async function gunlukBultenGonder() {
+  if (!process.env.BREVO_API_KEY) return;
+  
+  try {
+    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+    
+    // Bugünün haberlerini al
+    const bugun = new Date();
+    bugun.setHours(0, 0, 0, 0);
+    const bugunHaberleri = haberler
+      .filter(h => new Date(h.tarih) >= bugun)
+      .sort((a, b) => {
+        // Önce görüntülenme sayısına göre sırala
+        const aGor = goruntulenmeSayaci[a.slug] || 0;
+        const bGor = goruntulenmeSayaci[b.slug] || 0;
+        if(bGor !== aGor) return bGor - aGor;
+        // Eşitse tarihe göre sırala
+        return new Date(b.tarih) - new Date(a.tarih);
+      })
+      .slice(0, 20);
+
+    if (bugunHaberleri.length === 0) {
+      console.log('Bülten: Yeterli haber yok');
+      return;
+    }
+
+    const tarih = new Date().toLocaleDateString('tr-TR', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    });
+
+    // Haber HTML'i oluştur
+    const haberlerHTML = bugunHaberleri.map((h, i) => `
+      <tr>
+        <td style="padding:16px 32px;background:${i % 2 === 0 ? '#13131a' : '#0a0a0f'};border-bottom:1px solid #1e1e2a">
+          <table width="100%">
+            <tr>
+              <td>
+                <span style="background:#1e1e2a;color:#e8c84a;font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;letter-spacing:1px;text-transform:uppercase">
+                  ${h.emoji || '📊'} ${(h.cat || 'haber').toUpperCase()}
+                </span>
+              </td>
+              <td align="right">
+                <span style="color:#6b6b80;font-size:10px">${h.kaynak || ''}</span>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2" style="padding-top:8px">
+                <a href="${h.bizimUrl || 'https://anlikhaber.com'}" style="color:#f0ede8;font-size:15px;font-weight:600;text-decoration:none;line-height:1.4;display:block">
+                  ${h.title || ''}
+                </a>
+              </td>
+            </tr>
+            ${h.description ? `<tr><td colspan="2" style="padding-top:6px"><p style="color:#b8b5b0;font-size:12px;line-height:1.6;margin:0">${h.description.substring(0, 150)}...</p></td></tr>` : ''}
+            <tr>
+              <td colspan="2" style="padding-top:10px">
+                <a href="${h.bizimUrl || 'https://anlikhaber.com'}" style="color:#e8c84a;font-size:12px;text-decoration:none;font-weight:500">
+                  Devamını oku →
+                </a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`).join('');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="tr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f5f2eb;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2eb;padding:20px 0">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#0a0a0f;border-radius:12px;overflow:hidden">
+  <tr><td style="background:#0a0a0f;padding:28px 32px;border-bottom:2px solid #e8c84a">
+    <table width="100%"><tr>
+      <td><span style="font-size:26px;font-weight:900;color:#f0ede8;font-family:Georgia,serif">Anlık<span style="color:#e8c84a">Haber</span></span><br>
+      <span style="font-size:11px;color:#6b6b80;letter-spacing:1px">anlikhaber.com · Sabah Bülteni</span></td>
+      <td align="right"><span style="font-size:12px;color:#6b6b80">${tarih}</span><br>
+      <span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px">● CANLI</span></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="background:#c0392b;padding:10px 32px">
+    <span style="font-size:11px;color:#fff;font-weight:500">🔴 Bugünün en önemli ${bugunHaberleri.length} haberi</span>
+  </td></tr>
+  <tr><td style="padding:20px 32px 8px;background:#13131a">
+    <p style="color:#b8b5b0;font-size:14px;line-height:1.7;margin:0">
+      Günaydın! Bugün piyasalarda öne çıkan gelişmeleri derledik.
+    </p>
+  </td></tr>
+  ${haberlerHTML}
+  <tr><td style="padding:24px 32px;background:#13131a;text-align:center">
+    <a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">
+      Tüm Haberleri Gör →
+    </a>
+  </td></tr>
+  <tr><td style="padding:20px 32px;background:#0a0a0f;border-top:1px solid #1e1e2a;text-align:center">
+    <p style="color:#6b6b80;font-size:11px;margin:0;line-height:1.8">
+      © 2025 AnlıkHaber · anlikhaber.com · reklam@anlikhaber.com<br>
+      <a href="{{unsubscribe}}" style="color:#e8c84a">Abonelikten çık</a>
+    </p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+    // Brevo kampanya API ile gönder
+    const response = await fetch('https://api.brevo.com/v3/emailCampaigns', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key': process.env.BREVO_API_KEY
+      },
+      body: JSON.stringify({
+        name: `AnlıkHaber Sabah Bülteni - ${tarih}`,
+        subject: `📊 ${tarih} - Bugünün Finans Haberleri`,
+        sender: { name: 'AnlıkHaber', email: 'yonetim@anlikhaber.com' },
+        type: 'classic',
+        htmlContent,
+        recipients: { listIds: [2] },
+        scheduledAt: null
+      })
+    });
+
+    const result = await response.json();
+    
+    if (result.id) {
+      // Kampanyayı hemen gönder
+      await fetch(`https://api.brevo.com/v3/emailCampaigns/${result.id}/sendNow`, {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': process.env.BREVO_API_KEY
+        }
+      });
+      console.log('Sabah bülteni gönderildi! Kampanya ID:', result.id);
+    } else {
+      console.log('Bülten hatası:', JSON.stringify(result));
+    }
+  } catch(e) {
+    console.log('Bülten gönderme hatası:', e.message);
+  }
+}
+
 // Her 30 dk RSS tara
 cron.schedule('*/30 * * * *', fetchAndSaveNews);
+
+// Her sabah 07:00 TR saati (04:00 UTC) bülten gönder
+cron.schedule('0 4 * * *', async () => {
+  console.log('Sabah bülteni gönderiliyor...');
+  await gunlukBultenGonder();
+});
 
 // Her 2 saatte 1 tweet (günde 12, haftada ~84)
 cron.schedule('0 */2 * * *', async () => {
