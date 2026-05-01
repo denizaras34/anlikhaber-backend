@@ -202,8 +202,7 @@ async function fetchAndSaveNews() {
         if (haberler.length > 500) haberler = haberler.slice(0, 500);
         console.log('Haber eklendi:', turkishTitle.substring(0, 60));
 
-        await tweetHaber(haber);
-        await sleep(2000);
+        // Tweet saatlik cron ile atılacak
       }
     } catch (e) {
       console.log('Feed hatasi (' + feed.kaynak + '):', e.message);
@@ -214,6 +213,7 @@ async function fetchAndSaveNews() {
 
 async function tweetHaber(haber) {
   if (haber.tweetAtildi || postedUrls.has(haber.orijinalUrl)) return;
+
   try {
     const catTags = (CAT_TAGS[haber.cat] || ['#finans']).slice(0, 2).join(' ');
     const trendTags = STATIC_TRENDS.slice(0, 2).join(' ');
@@ -233,8 +233,8 @@ async function tweetHaber(haber) {
     console.log('Tweet atildi:', haber.title.substring(0, 50));
   } catch (e) {
     if (e.code === 429) {
-      console.log('Rate limit — 15 dk bekleniyor...');
-      await sleep(15 * 60 * 1000);
+      console.log('Rate limit — 5 dk bekleniyor...');
+      await sleep(5 * 60 * 1000);
     } else {
       console.log('Tweet hatasi:', e.message);
     }
@@ -444,6 +444,25 @@ app.get('/', (req, res) => {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 cron.schedule('*/30 * * * *', fetchAndSaveNews);
+
+// Saatte 3 tweet - her 20 dakikada bir 1 tweet
+const tweetKuyrugu = [];
+let tweetKuyrukIndex = 0;
+
+cron.schedule('*/20 * * * *', async () => {
+  // Tweet atılmamış haberleri bul
+  const bekleyenler = haberler.filter(h => !h.tweetAtildi && !postedUrls.has(h.orijinalUrl));
+  
+  if (bekleyenler.length === 0) {
+    console.log('Tweet kuyruğu boş');
+    return;
+  }
+
+  // En yeni haberi al
+  const haber = bekleyenler[0];
+  await tweetHaber(haber);
+  console.log('Saatlik tweet gönderildi:', haber.title.substring(0, 50));
+});
 
 app.listen(PORT, async () => {
   console.log('AnlikHaber Backend - Port:', PORT);
