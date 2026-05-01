@@ -274,6 +274,54 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+// Sitemap endpoint - Google için
+app.get('/sitemap.xml', (req, res) => {
+  const urls = haberler.slice(0, 100).map(h => `
+  <url>
+    <loc>${h.bizimUrl || 'https://anlikhaber.com'}</loc>
+    <lastmod>${new Date(h.tarih || Date.now()).toISOString().split('T')[0]}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>`).join('');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://anlikhaber.com</loc>
+    <changefreq>hourly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  ${urls}
+</urlset>`;
+
+  res.set('Content-Type', 'application/xml');
+  res.send(xml);
+});
+
+// Sitemap endpoint - Google SEO için
+app.get('/sitemap.xml', (req, res) => {
+  const urls = haberler.slice(0, 100).map(h => `
+  <url>
+    <loc>${h.bizimUrl || 'https://anlikhaber.com'}</loc>
+    <lastmod>${new Date(h.tarih || Date.now()).toISOString().split('T')[0]}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>`).join('');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://anlikhaber.com</loc>
+    <changefreq>hourly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  ${urls}
+</urlset>`;
+
+  res.set('Content-Type', 'application/xml');
+  res.send(xml);
+});
+
 // RSS Feed endpoint - Zapier için
 app.get('/rss', (req, res) => {
   const items = haberler.slice(0, 20).map(h => `
