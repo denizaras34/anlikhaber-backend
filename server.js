@@ -466,8 +466,7 @@ async function gunlukBultenGonder() {
         sender: { name: 'AnlıkHaber', email: 'yonetim@anlikhaber.com' },
         type: 'classic',
         htmlContent,
-        recipients: { listIds: [2] },
-        scheduledAt: null
+        recipients: { listIds: [2] }
       })
     });
 
