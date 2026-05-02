@@ -610,8 +610,7 @@ cron.schedule('0 17 * * 0', async () => {
     `Size sadece güvenilir, temizlenmiş haberleri sunuyoruz.`,
     ``,
     `#anlikhaber #finans #yapayzekagazetecilik`
-  ].join('
-').substring(0, 280);
+  ].join('\n').substring(0, 280);
 
   try {
     await twitter.v2.tweet(tweetText);
