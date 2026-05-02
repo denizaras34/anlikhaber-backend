@@ -75,17 +75,28 @@ function createSlug(title) {
 async function generateTurkishContent(haber) {
   if (!anthropic) return { title: haber.title, content: haber.description || '' };
   try {
+    const bugun = new Date().toLocaleDateString('tr-TR', {day:'numeric', month:'long', year:'numeric'});
+    
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
+      max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `Translate this financial news to Turkish. Return ONLY valid JSON, no extra text.
+        content: `Sen bir Türk finans haber editörüsün. Aşağıdaki haberi Türkçeye çevir ve SEO için optimize et.
 
-Title: ${haber.title.substring(0, 100)}
-Description: ${(haber.description || '').substring(0, 200)}
+Bugünün tarihi: ${bugun}
 
-Return: {"title":"Turkish title here","content":"Turkish content 2-3 sentences here"}`
+Orijinal başlık: ${haber.title.substring(0, 150)}
+Açıklama: ${(haber.description || '').substring(0, 300)}
+Kaynak: ${haber.kaynak}
+
+KURALLAR:
+1. Başlığı soru formatında yaz (örn: "Dolar bugün neden yükseldi?", "Bitcoin 80.000 doları aşabilir mi?")
+2. Başlığa tarihi ekle (örn: "${bugun} Güncel")
+3. İçeriği 3-4 cümle Türkçe yaz, net ve anlaşılır
+4. Sadece JSON döndür, başka hiçbir şey yazma
+
+JSON formatı: {"title":"SEO başlık buraya","content":"Türkçe içerik buraya"}`
       }]
     });
     const text = response.content[0].text.trim();
