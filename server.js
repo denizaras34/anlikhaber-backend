@@ -179,19 +179,37 @@ async function fetchAndSaveNews() {
         let turkishTitle = title;
         let turkishContent = item.contentSnippet || item.content || item.summary || '';
         let isTranslated = false;
+        let metaDesc = '';
+        let imagePrompt = '';
 
         if (feed.lang === 'en' && anthropic) {
           try {
-            const aiContent = await generateTurkishContent({ title, description: turkishContent, kaynak: feed.kaynak });
+            const aiContent = await generateTurkishContent({ title, description: turkishContent, kaynak: feed.kaynak, cat: feed.cat });
             turkishTitle = aiContent.title || title;
             turkishContent = aiContent.content || turkishContent;
+            metaDesc = aiContent.metaDesc || turkishContent.substring(0, 160);
+            imagePrompt = aiContent.imagePrompt || '';
             isTranslated = true;
             await sleep(1500);
           } catch(e) {
             turkishContent = (turkishContent || '') + '\n\nDetaylar icin kaynagi ziyaret edin: ' + feed.kaynak;
+            metaDesc = turkishContent.substring(0, 160);
+          }
+        } else if (feed.lang === 'tr' && anthropic && turkishContent) {
+          try {
+            const aiContent = await generateTurkishContent({ title, description: turkishContent, kaynak: feed.kaynak, cat: feed.cat });
+            turkishTitle = aiContent.title || title;
+            metaDesc = aiContent.metaDesc || turkishContent.substring(0, 160);
+            imagePrompt = aiContent.imagePrompt || '';
+            await sleep(1000);
+          } catch(e) {
+            metaDesc = turkishContent.substring(0, 160);
           }
         } else if (feed.lang === 'en' && !anthropic) {
           turkishContent = (turkishContent || title) + '\n\nBu haber ' + feed.kaynak + ' kaynagindan alinmistir.';
+          metaDesc = turkishContent.substring(0, 160);
+        } else {
+          metaDesc = turkishContent.substring(0, 160);
         }
 
         let resim = null;
