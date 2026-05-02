@@ -525,12 +525,28 @@ app.get('/api/sentiment/:slug', (req, res) => {
   res.json(s);
 });
 
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', async (req, res) => {
+  let abone = null;
+  try {
+    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+    const r = await fetch('https://api.brevo.com/v3/contacts?limit=1&listId=2', {
+      headers: { 'api-key': process.env.BREVO_API_KEY, 'accept': 'application/json' }
+    });
+    const d = await r.json();
+    abone = d.count || null;
+  } catch(e) {}
+
   res.json({
     toplamHaber: haberler.length,
     tweetAtilanlar: haberler.filter(h => h.tweetAtildi).length,
     sonGuncelleme: new Date().toISOString(),
     trends: STATIC_TRENDS,
+    abone,
+    seffaflik: {
+      taranan: seffaflikStats.haftalikTaranan,
+      eklenen: seffaflikStats.haftalikEklenen,
+      elenen: seffaflikStats.haftalikElenen,
+    }
   });
 });
 
