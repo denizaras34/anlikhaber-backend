@@ -188,7 +188,7 @@ async function fetchAndSaveNews() {
             turkishTitle = aiContent.title || title;
             turkishContent = aiContent.content || turkishContent;
             metaDesc = aiContent.metaDesc || turkishContent.substring(0, 160);
-            imagePrompt = aiContent.imagePrompt || '';
+            imagePrompt = process.env.IMAGE_PROMPT_ACTIVE === 'true' ? (aiContent.imagePrompt || '') : '';
             isTranslated = true;
             await sleep(1500);
           } catch(e) {
@@ -200,7 +200,8 @@ async function fetchAndSaveNews() {
             const aiContent = await generateTurkishContent({ title, description: turkishContent, kaynak: feed.kaynak, cat: feed.cat });
             turkishTitle = aiContent.title || title;
             metaDesc = aiContent.metaDesc || turkishContent.substring(0, 160);
-            imagePrompt = aiContent.imagePrompt || '';
+            // Image prompt sadece aktifse sakla
+            imagePrompt = process.env.IMAGE_PROMPT_ACTIVE === 'true' ? (aiContent.imagePrompt || '') : '';
             await sleep(1000);
           } catch(e) {
             metaDesc = turkishContent.substring(0, 160);
