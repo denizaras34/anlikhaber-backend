@@ -15,7 +15,17 @@ app.use(express.json());
 
 let haberler = [];
 let postedUrls = new Set();
-const goruntulenmeSayaci = {}; // slug -> sayi
+const goruntulenmeSayaci = {};
+
+// AI Şeffaflık Sayaçları
+const seffaflikStats = {
+  haftalikTaranan: 0,
+  haftalikEklenen: 0,
+  haftalikElenen: 0,
+  toplamTaranan: 0,
+  toplamElenen: 0,
+  haftaBaslangic: new Date(),
+};
 
 const twitter = new TwitterApi({
   appKey:       process.env.X_API_KEY,
@@ -58,6 +68,29 @@ const CAT_TAGS = {
 };
 
 const STATIC_TRENDS = ['#BIST100', '#dolar', '#altin', '#faiz', '#kripto'];
+
+// Manipülatif/clickbait haber tespiti
+function isManipulative(title) {
+  if(!title) return false;
+  const manipPatterns = [
+    /şok(layıcı)?/i, /inanılmaz/i, /bomba gibi/i, /flaş/i,
+    /herkes bunu biliyor mu/i, /kimse söylemiyor/i, /gizli/i,
+    /sizi zengin edecek/i, /garantili/i, /kesin kazan/i,
+    /\d+x kazanç/i, /para basıyor/i, /milyoner ol/i,
+    /acil.*karar/i, /son fırsat/i, /dikkat.*dolandırıcı/i
+  ];
+  return manipPatterns.some(p => p.test(title));
+}
+
+// Önemli haber mi? (Analitik thread için)
+function isOnemliHaber(title, cat) {
+  const onemliKeywords = [
+    /faiz/i, /merkez bankası/i, /fed/i, /enflasyon/i,
+    /dolar.*tl/i, /bist.*\d+/i, /bitcoin.*\d+/i, /altın.*\d+/i,
+    /tcmb/i, /büyüme/i, /gsyih/i, /işsizlik/i
+  ];
+  return onemliKeywords.some(p => p.test(title));
+}
 
 function isTurkish(text) {
   if(!text) return false;
@@ -183,6 +216,7 @@ async function fetchAndSaveNews() {
 
         haberler.unshift(haber);
         yeni++;
+        seffaflikStats.haftalikEklenen++;
         if (haberler.length > 500) haberler = haberler.slice(0, 500);
         console.log('Haber eklendi:', turkishTitle.substring(0, 60));
       }
@@ -191,6 +225,37 @@ async function fetchAndSaveNews() {
     }
   }
   console.log('RSS bitti. ' + yeni + ' yeni haber.');
+}
+
+// Önemli haberler için analitik thread oluştur
+async function generateAnalitikThread(haber) {
+  if (!anthropic) return;
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      messages: [{
+        role: 'user',
+        content: `Türk finans analisti olarak şu haberi analiz et ve X (Twitter) için kısa bir thread yaz.
+
+Haber: ${haber.title}
+
+Şunu yap: "Bu verinin/kararın/haberin 3 olası etkisi:" formatında 3 madde yaz.
+Sadece JSON döndür: {"thread": "🧵 Başlık\n\n1️⃣ ...\n2️⃣ ...\n3️⃣ ...\n\n#finans #anlikhaber"}`
+      }]
+    });
+    const text = response.content[0].text.trim();
+    const match = text.match(/\{[\s\S]*?\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (parsed.thread) {
+        haber.analitikThread = parsed.thread.substring(0, 280);
+        console.log('Analitik thread oluşturuldu:', haber.title.substring(0, 40));
+      }
+    }
+  } catch(e) {
+    // Sessizce geç
+  }
 }
 
 async function tweetHaber(haber) {
@@ -252,6 +317,23 @@ app.get('/api/ilgili/:slug', (req, res) => {
   if (!haber) return res.status(404).json([]);
   const ilgili = haberler.filter(h => h.slug !== req.params.slug && h.cat === haber.cat).slice(0, 4);
   res.json(ilgili);
+});
+
+// AI Şeffaflık Raporu endpoint
+app.get('/api/seffaflik', (req, res) => {
+  const gunSayisi = Math.max(1, Math.floor((Date.now() - new Date(seffaflikStats.haftaBaslangic)) / 86400000));
+  res.json({
+    haftalikTaranan: seffaflikStats.haftalikTaranan,
+    haftalikEklenen: seffaflikStats.haftalikEklenen,
+    haftalikElenen: seffaflikStats.haftalikElenen,
+    toplamTaranan: seffaflikStats.toplamTaranan,
+    toplamElenen: seffaflikStats.toplamElenen,
+    elenmeOrani: seffaflikStats.haftalikTaranan > 0 
+      ? Math.round((seffaflikStats.haftalikElenen / seffaflikStats.haftalikTaranan) * 100) 
+      : 0,
+    haftaBaslangic: seffaflikStats.haftaBaslangic,
+    gunSayisi,
+  });
 });
 
 app.get('/api/stats', (req, res) => {
@@ -503,6 +585,36 @@ async function gunlukBultenGonder() {
 
 // Her 30 dk RSS tara
 cron.schedule('*/30 * * * *', fetchAndSaveNews);
+
+// Her Pazar 20:00 TR (17:00 UTC) şeffaflık raporu tweet
+cron.schedule('0 17 * * 0', async () => {
+  const s = seffaflikStats;
+  const tweetText = [
+    `📊 AnlıkHaber Haftalık AI Şeffaflık Raporu`,
+    ``,
+    `Bu hafta:`,
+    `🔍 ${s.haftalikTaranan} haber tarandı`,
+    `✅ ${s.haftalikEklenen} haber yayınlandı`,
+    `🚫 ${s.haftalikElenen} haber elendi (manipülatif/kalitesiz)`,
+    ``,
+    `Size sadece güvenilir, temizlenmiş haberleri sunuyoruz.`,
+    ``,
+    `#anlikhaber #finans #yapayzekagazetecilik`
+  ].join('
+').substring(0, 280);
+
+  try {
+    await twitter.v2.tweet(tweetText);
+    console.log('Şeffaflık raporu tweet atıldı!');
+    // Haftalık sayaçları sıfırla
+    seffaflikStats.haftalikTaranan = 0;
+    seffaflikStats.haftalikEklenen = 0;
+    seffaflikStats.haftalikElenen = 0;
+    seffaflikStats.haftaBaslangic = new Date();
+  } catch(e) {
+    console.log('Şeffaflık tweet hatası:', e.message);
+  }
+});
 
 // Her sabah 07:00 TR saati (04:00 UTC) bülten gönder
 cron.schedule('0 4 * * *', async () => {
