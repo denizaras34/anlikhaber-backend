@@ -315,6 +315,79 @@ async function tweetHaber(haber) {
   }
 }
 
+// ============ SENTIMENT ANALİZİ ============
+
+let sentimentCache = {
+  skor: 50,
+  etiket: 'Nötr / Belirsiz',
+  pozitif: 0,
+  negatif: 0,
+  notr: 0,
+  toplamHaber: 0,
+  sonGuncelleme: new Date().toISOString(),
+};
+
+function sentimentAnalizi() {
+  const bugun = new Date();
+  bugun.setHours(bugun.getHours() - 24);
+  const sonHaberler = haberler.filter(h => new Date(h.tarih) > bugun);
+
+  if (sonHaberler.length === 0) return;
+
+  const pozitifKelimeler = [
+    'yüksel', 'arttı', 'rekor', 'büyüme', 'güçlü', 'rally', 'kazanç',
+    'toparlandı', 'pozitif', 'iyimser', 'artış', 'başarı', 'zirve',
+    'fırladı', 'atladı', 'coştu', 'talep', 'güven', 'istikrar', 'kâr',
+    'surge', 'gain', 'rise', 'rally', 'bull', 'recovery', 'strong'
+  ];
+
+  const negatifKelimeler = [
+    'düştü', 'geriledi', 'çöktü', 'kayıp', 'endişe', 'risk', 'kriz',
+    'panik', 'satış', 'zayıf', 'olumsuz', 'kaygı', 'belirsiz', 'tehlike',
+    'azaldı', 'daraldı', 'sert', 'çöküş', 'yavaşladı', 'baskı', 'zarar',
+    'crash', 'fall', 'drop', 'bear', 'fear', 'uncertainty', 'weak', 'loss'
+  ];
+
+  let pozitif = 0, negatif = 0, notr = 0;
+
+  sonHaberler.forEach(h => {
+    const metin = ((h.title || '') + ' ' + (h.description || '')).toLowerCase();
+    let puan = 0;
+    pozitifKelimeler.forEach(k => { if (metin.includes(k)) puan++; });
+    negatifKelimeler.forEach(k => { if (metin.includes(k)) puan--; });
+    if (puan > 0) pozitif++;
+    else if (puan < 0) negatif++;
+    else notr++;
+  });
+
+  const toplam = sonHaberler.length;
+  const skor = Math.round(((pozitif - negatif) / toplam + 1) / 2 * 100);
+  const normalSkor = Math.max(0, Math.min(100, skor));
+
+  let etiket;
+  if (normalSkor <= 20) etiket = 'Aşırı Karamsar (Panik)';
+  else if (normalSkor <= 40) etiket = 'Temkinli / Negatif';
+  else if (normalSkor <= 60) etiket = 'Nötr / Belirsiz';
+  else if (normalSkor <= 80) etiket = 'İyimser / Pozitif';
+  else etiket = 'Aşırı Coşkulu (FOMO)';
+
+  sentimentCache = {
+    skor: normalSkor,
+    etiket,
+    pozitif,
+    negatif,
+    notr,
+    toplamHaber: toplam,
+    sonGuncelleme: new Date().toISOString(),
+    uyari: 'Bu analiz, yapay zeka tarafından haber metinleri üzerinde yapılan bir dil analizidir. Yatırım tavsiyesi içermez; piyasadaki genel haber akışının istatistiksel bir özetidir.'
+  };
+
+  console.log('Sentiment güncellendi:', etiket, '(' + normalSkor + ')');
+}
+
+// Her saat sentiment güncelle
+cron.schedule('0 * * * *', sentimentAnalizi);
+
 // ============ API ENDPOINTS ============
 
 app.get('/api/haberler', (req, res) => {
@@ -363,6 +436,10 @@ app.get('/api/seffaflik', (req, res) => {
     haftaBaslangic: seffaflikStats.haftaBaslangic,
     gunSayisi,
   });
+});
+
+app.get('/api/sentiment', (req, res) => {
+  res.json(sentimentCache);
 });
 
 app.get('/api/stats', (req, res) => {
@@ -650,6 +727,39 @@ cron.schedule('0 4 * * *', async () => {
   await gunlukBultenGonder();
 });
 
+// Pazartesi 09:00 TR (06:00 UTC) sentiment raporu tweet
+cron.schedule('0 6 * * 1', async () => {
+  const s = sentimentCache;
+  if(!s || !s.etiket) return;
+  
+  let emoji = '😐';
+  if(s.skor <= 20) emoji = '😱';
+  else if(s.skor <= 40) emoji = '😟';
+  else if(s.skor <= 60) emoji = '😐';
+  else if(s.skor <= 80) emoji = '😊';
+  else emoji = '🚀';
+
+  const tweetText = [
+    `${emoji} AnlıkHaber AI Piyasa Duygu Raporu`,
+    ``,
+    `📊 Genel Duygu: ${s.etiket}`,
+    `📈 Skor: ${s.skor}/100`,
+    `🔍 ${s.toplamHaber} haber analiz edildi`,
+    `✅ ${s.pozitif} pozitif | 🔴 ${s.negatif} negatif`,
+    ``,
+    `🔗 anlikhaber.com`,
+    ``,
+    `#piyasa #borsa #anlikhaber #yapayZeka`
+  ].join('\n').substring(0, 280);
+
+  try {
+    await twitter.v2.tweet(tweetText);
+    console.log('Sentiment tweet atıldı!');
+  } catch(e) {
+    console.log('Sentiment tweet hatası:', e.message);
+  }
+});
+
 // Her 2 saatte 1 tweet (günde 12, haftada ~84)
 cron.schedule('0 */2 * * *', async () => {
   const bekleyenler = haberler.filter(h => !h.tweetAtildi && !postedUrls.has(h.orijinalUrl));
@@ -660,4 +770,5 @@ cron.schedule('0 */2 * * *', async () => {
 app.listen(PORT, async () => {
   console.log('AnlikHaber Backend - Port:', PORT);
   await fetchAndSaveNews();
+  sentimentAnalizi();
 });
