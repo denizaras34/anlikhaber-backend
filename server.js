@@ -243,6 +243,9 @@ async function fetchAndSaveNews() {
           tweetAtildi: false,
         };
 
+        // Her habere duygu skoru ekle
+        haber.sentiment = haberSentimentSkoru(haber);
+        
         haberler.unshift(haber);
         yeni++;
         seffaflikStats.haftalikEklenen++;
@@ -327,6 +330,80 @@ let sentimentCache = {
   sonGuncelleme: new Date().toISOString(),
 };
 
+// ============ HABER BAŞINA DUYGU SKORU ============
+
+const pozitifAgirlik = {
+  // Güçlü pozitif (+3)
+  'kâr artışı': 3, 'beklenti üstü': 3, 'ihracat rekoru': 3, 'rekor kâr': 3,
+  'stratejik iş birliği': 3, 'yabancı ilgisi': 3, 'büyüme rekoru': 3,
+  // Orta pozitif (+2)
+  'yükseldi': 2, 'arttı': 2, 'rekor': 2, 'güçlü': 2, 'toparlandı': 2,
+  'pozitif': 2, 'büyüdü': 2, 'kârlı': 2, 'başarı': 2, 'rally': 2,
+  'aştı': 2, 'üzerinde': 2, 'tahmin üstü': 2, 'ivme': 2,
+  // Hafif pozitif (+1)
+  'istikrar': 1, 'güven': 1, 'artış': 1, 'fırsat': 1, 'talep': 1,
+  'yatırım': 1, 'ihracat': 1, 'büyüme': 1, 'kâr': 1, 'temettü': 1,
+};
+
+const negatifAgirlik = {
+  // Güçlü negatif (-3)
+  'maliyet artışı': -3, 'arz daralması': -3, 'jeopolitik risk': -3,
+  'enflasyon baskısı': -3, 'düşüş trendi': -3, 'iflas': -3, 'batık': -3,
+  // Orta negatif (-2)
+  'düştü': -2, 'geriledi': -2, 'kayıp': -2, 'risk': -2, 'kriz': -2,
+  'panik': -2, 'zayıf': -2, 'endişe': -2, 'baskı': -2, 'daraldı': -2,
+  'zararda': -2, 'tahmin altı': -2, 'sert düşüş': -2,
+  // Hafif negatif (-1)
+  'belirsiz': -1, 'yavaşladı': -1, 'azaldı': -1, 'olumsuz': -1,
+  'sorun': -1, 'güçlük': -1, 'faiz artışı': -1, 'enflasyon': -1,
+};
+
+// Manipülatif kelimeler — analiz dışı bırak
+const manipulatif = [
+  'şok', 'bomba', 'inanılmaz', 'garantili', 'kesin kazan', 'milyoner',
+  'sır', 'gizli', 'acil', 'son fırsat', 'herkese', 'flaş'
+];
+
+function haberSentimentSkoru(haber) {
+  const metin = ((haber.title || '') + ' ' + (haber.description || '')).toLowerCase();
+  
+  // Manipülatif mi? — güvenilmez, nötr döndür
+  for(const m of manipulatif) {
+    if(metin.includes(m)) return { score: 50, label: 'Nötr', guvenilir: false };
+  }
+
+  let puan = 0;
+  let eslesme = 0;
+
+  // Pozitif kelimeler
+  for(const [kelime, agirlik] of Object.entries(pozitifAgirlik)) {
+    if(metin.includes(kelime)) { puan += agirlik; eslesme++; }
+  }
+
+  // Negatif kelimeler
+  for(const [kelime, agirlik] of Object.entries(negatifAgirlik)) {
+    if(metin.includes(kelime)) { puan += agirlik; eslesme++; }
+  }
+
+  // Baz puan 50, normalize et
+  const normalPuan = Math.max(0, Math.min(100, 50 + (puan * 5)));
+  
+  let label;
+  if(normalPuan <= 20) label = 'Panik';
+  else if(normalPuan <= 35) label = 'Negatif';
+  else if(normalPuan <= 50) label = 'Temkinli';
+  else if(normalPuan <= 65) label = 'Nötr';
+  else if(normalPuan <= 80) label = 'Pozitif';
+  else label = 'Coşkulu';
+
+  return { 
+    score: normalPuan, 
+    label, 
+    guvenilir: eslesme > 0,
+    uyari: 'Bu skor, yapay zeka tarafından haber metni üzerinde yapılan istatistiksel bir dil analizidir. Yatırım tavsiyesi içermez; sadece haberin tonunu raporlar.'
+  };
+}
+
 function sentimentAnalizi() {
   const bugun = new Date();
   bugun.setHours(bugun.getHours() - 24);
@@ -349,20 +426,18 @@ function sentimentAnalizi() {
   ];
 
   let pozitif = 0, negatif = 0, notr = 0;
+  let toplamSkor = 0;
 
   sonHaberler.forEach(h => {
-    const metin = ((h.title || '') + ' ' + (h.description || '')).toLowerCase();
-    let puan = 0;
-    pozitifKelimeler.forEach(k => { if (metin.includes(k)) puan++; });
-    negatifKelimeler.forEach(k => { if (metin.includes(k)) puan--; });
-    if (puan > 0) pozitif++;
-    else if (puan < 0) negatif++;
+    const s = h.sentiment || haberSentimentSkoru(h);
+    toplamSkor += s.score;
+    if (s.score > 60) pozitif++;
+    else if (s.score < 40) negatif++;
     else notr++;
   });
 
   const toplam = sonHaberler.length;
-  const skor = Math.round(((pozitif - negatif) / toplam + 1) / 2 * 100);
-  const normalSkor = Math.max(0, Math.min(100, skor));
+  const normalSkor = Math.round(toplamSkor / toplam);
 
   let etiket;
   if (normalSkor <= 20) etiket = 'Aşırı Karamsar (Panik)';
@@ -440,6 +515,14 @@ app.get('/api/seffaflik', (req, res) => {
 
 app.get('/api/sentiment', (req, res) => {
   res.json(sentimentCache);
+});
+
+// Tek haber sentiment skoru
+app.get('/api/sentiment/:slug', (req, res) => {
+  const haber = haberler.find(h => h.slug === req.params.slug);
+  if(!haber) return res.status(404).json({ error: 'Bulunamadi' });
+  const s = haber.sentiment || haberSentimentSkoru(haber);
+  res.json(s);
 });
 
 app.get('/api/stats', (req, res) => {
