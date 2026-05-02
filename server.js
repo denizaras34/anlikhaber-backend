@@ -112,37 +112,45 @@ async function generateTurkishContent(haber) {
     
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
+      max_tokens: 800,
       messages: [{
         role: 'user',
-        content: `Sen bir Türk finans haber editörüsün. Aşağıdaki haberi Türkçeye çevir ve SEO için optimize et.
+        content: `Sen AnlıkHaber için çalışan bir Türk finans haber editörüsün. Aşağıdaki haberi Google Discover ve SEO için optimize et.
 
 Bugünün tarihi: ${bugun}
-
 Orijinal başlık: ${haber.title.substring(0, 150)}
 Açıklama: ${(haber.description || '').substring(0, 300)}
 Kaynak: ${haber.kaynak}
+Kategori: ${haber.cat || 'finans'}
 
-KURALLAR:
-1. Başlığı soru formatında yaz (örn: "Dolar bugün neden yükseldi?", "Bitcoin 80.000 doları aşabilir mi?")
-2. Başlığa tarihi ekle (örn: "${bugun} Güncel")
-3. İçeriği 3-4 cümle Türkçe yaz, net ve anlaşılır
-4. Sadece JSON döndür, başka hiçbir şey yazma
+GÖREV 1 - BAŞLIK: Google Discover için merak uyandıran ama tıklama tuzağı olmayan başlık yaz.
+Örnekler: "Borsa İstanbul'da Bilanço Şoku mu, Şöleni mi?", "Dolar 45 TL'yi Aşar mı? İşte Kritik Eşik"
+Başlığa bugünün tarihini ekle.
 
-JSON formatı: {"title":"SEO başlık buraya","content":"Türkçe içerik buraya"}`
+GÖREV 2 - GİRİŞ PARAGRAFI: "Claude AI analizimize göre..." diye başla, haberin can alıcı verisini ver, merak uyandır.
+2-3 cümle, meta description olarak kullanılacak.
+
+GÖREV 3 - GÖRSEL PROMPT: Siyah ve altın sarısı renk paleti, fütüristik, dijital tema. Haberin konusunu görselleştir.
+Örnek: "Futuristic stock market trading floor, golden glowing holographic charts, black and gold palette, 16:9, cinematic"
+
+SADECE JSON döndür:
+{"title":"başlık","content":"içerik 3-4 cümle","metaDesc":"giriş paragrafı 150 karakter","imagePrompt":"görsel prompt İngilizce"}`
       }]
     });
+
     const text = response.content[0].text.trim();
     const match = text.match(/\{[\s\S]*?\}/);
     if (!match) throw new Error('JSON bulunamadi');
     const parsed = JSON.parse(match[0]);
     return {
       title: (parsed.title || haber.title).substring(0, 200),
-      content: (parsed.content || haber.description || '').substring(0, 500)
+      content: (parsed.content || haber.description || '').substring(0, 800),
+      metaDesc: (parsed.metaDesc || '').substring(0, 160),
+      imagePrompt: parsed.imagePrompt || ''
     };
   } catch(e) {
     console.log('AI icerik hatasi:', e.message);
-    return { title: haber.title, content: haber.description || '' };
+    return { title: haber.title, content: haber.description || '', metaDesc: '', imagePrompt: '' };
   }
 }
 
@@ -204,7 +212,9 @@ async function fetchAndSaveNews() {
           id: Date.now() + Math.random(),
           slug, title: turkishTitle, originalTitle: title,
           content: turkishContent,
-          description: turkishContent.substring(0, 300),
+          description: metaDesc || turkishContent.substring(0, 160),
+          metaDesc: metaDesc || turkishContent.substring(0, 160),
+          imagePrompt: imagePrompt || '',
           orijinalUrl, bizimUrl,
           kaynak: feed.kaynak,
           kaynakUrl: orijinalUrl,
