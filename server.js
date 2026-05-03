@@ -10,6 +10,30 @@ const Anthropic = require('@anthropic-ai/sdk');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Telegram Bot
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TELEGRAM_KANAL = process.env.TELEGRAM_KANAL; // @anlikhaber veya -100xxxxxxx
+const TELEGRAM_GRUP = process.env.TELEGRAM_GRUP;   // grup ID
+
+async function telegramGonder(chatId, mesaj) {
+  if(!TELEGRAM_TOKEN || !chatId) return;
+  try {
+    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+    await fetch('https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: mesaj,
+        parse_mode: 'HTML',
+        disable_web_page_preview: false
+      })
+    });
+  } catch(e) {
+    console.log('Telegram hata:', e.message);
+  }
+}
+
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
@@ -249,6 +273,22 @@ async function fetchAndSaveNews() {
         haberler.unshift(haber);
         yeni++;
         seffaflikStats.haftalikEklenen++;
+
+        // Telegram kanala gönder
+        if(TELEGRAM_KANAL) {
+          const tgMesaj = [
+            haber.emoji + ' <b>' + haber.title + '</b>',
+            '',
+            (haber.description || '').substring(0, 200) + '...',
+            '',
+            '🔗 <a href="' + haber.bizimUrl + '">Devamını oku</a>',
+            '📌 Kaynak: ' + haber.kaynak,
+            '',
+            '#' + (haber.cat || 'finans') + ' #anlikhaber'
+          ].join('
+');
+          setTimeout(() => telegramGonder(TELEGRAM_KANAL, tgMesaj), yeni * 2000);
+        }
         if (haberler.length > 500) haberler = haberler.slice(0, 500);
         console.log('Haber eklendi:', turkishTitle.substring(0, 60));
       }
@@ -638,6 +678,11 @@ app.get('/api/test-bulten', async (req, res) => {
   await gunlukBultenGonder();
 });
 
+app.get('/api/test-telegram', async (req, res) => {
+  await telegramGonder(TELEGRAM_KANAL || req.query.chat_id, '🧪 AnlıkHaber Telegram botu çalışıyor! ✅');
+  res.json({ ok: true });
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'AnlikHaber Backend calisıyor', haberSayisi: haberler.length });
 });
@@ -824,6 +869,20 @@ cron.schedule('0 17 * * 0', async () => {
 cron.schedule('0 4 * * *', async () => {
   console.log('Sabah bülteni gönderiliyor...');
   await gunlukBultenGonder();
+  
+  // Telegram sabah özeti
+  if(TELEGRAM_KANAL && haberler.length > 0) {
+    const bugunHaberleri = haberler.slice(0, 5);
+    const mesaj = [
+      '🌅 <b>Günaydın! AnlıkHaber Sabah Özeti</b>',
+      '',
+      ...bugunHaberleri.map((h, i) => (i+1) + '. <a href="' + h.bizimUrl + '">' + h.title + '</a>'),
+      '',
+      '📊 Tüm haberler: <a href="https://anlikhaber.com">anlikhaber.com</a>'
+    ].join('
+');
+    await telegramGonder(TELEGRAM_KANAL, mesaj);
+  }
 });
 
 // Pazartesi 09:00 TR (06:00 UTC) sentiment raporu tweet
@@ -857,6 +916,31 @@ cron.schedule('0 6 * * 1', async () => {
   } catch(e) {
     console.log('Sentiment tweet hatası:', e.message);
   }
+});
+
+// Pazartesi 09:00 Telegram sentiment raporu
+cron.schedule('0 6 * * 1', async () => {
+  const s = sentimentCache;
+  if(!s || !TELEGRAM_KANAL) return;
+  
+  let emoji = s.skor <= 20 ? '😱' : s.skor <= 40 ? '😟' : s.skor <= 60 ? '😐' : s.skor <= 80 ? '😊' : '🚀';
+  
+  const mesaj = [
+    '📊 <b>AnlıkHaber Haftalık AI Piyasa Raporu</b>',
+    '',
+    emoji + ' Genel Duygu: <b>' + s.etiket + '</b>',
+    '📈 Skor: <b>' + s.skor + '/100</b>',
+    '🔍 ' + s.toplamHaber + ' haber analiz edildi',
+    '✅ ' + s.pozitif + ' pozitif | 🔴 ' + s.negatif + ' negatif',
+    '',
+    '🔗 <a href="https://anlikhaber.com">anlikhaber.com</a>',
+    '',
+    '<i>Bu analiz yatırım tavsiyesi içermez.</i>'
+  ].join('
+');
+  
+  await telegramGonder(TELEGRAM_KANAL, mesaj);
+  if(TELEGRAM_GRUP) await telegramGonder(TELEGRAM_GRUP, mesaj);
 });
 
 // Her 2 saatte 1 tweet (günde 12, haftada ~84)
