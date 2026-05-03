@@ -19,7 +19,7 @@ async function telegramGonder(chatId, mesaj) {
   if(!TELEGRAM_TOKEN || !chatId) return;
   try {
     const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-    await fetch('https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage', {
+    const r = await fetch('https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -29,6 +29,9 @@ async function telegramGonder(chatId, mesaj) {
         disable_web_page_preview: false
       })
     });
+    const d = await r.json();
+    if(!d.ok) console.log('Telegram hata:', JSON.stringify(d));
+    else console.log('Telegram OK:', chatId);
   } catch(e) {
     console.log('Telegram hata:', e.message);
   }
