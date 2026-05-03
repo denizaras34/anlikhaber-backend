@@ -285,8 +285,7 @@ async function fetchAndSaveNews() {
             '📌 Kaynak: ' + haber.kaynak,
             '',
             '#' + (haber.cat || 'finans') + ' #anlikhaber'
-          ].join('
-');
+          ].join('\n');
           setTimeout(() => telegramGonder(TELEGRAM_KANAL, tgMesaj), yeni * 2000);
         }
         if (haberler.length > 500) haberler = haberler.slice(0, 500);
@@ -879,8 +878,7 @@ cron.schedule('0 4 * * *', async () => {
       ...bugunHaberleri.map((h, i) => (i+1) + '. <a href="' + h.bizimUrl + '">' + h.title + '</a>'),
       '',
       '📊 Tüm haberler: <a href="https://anlikhaber.com">anlikhaber.com</a>'
-    ].join('
-');
+    ].join('\n');
     await telegramGonder(TELEGRAM_KANAL, mesaj);
   }
 });
@@ -936,8 +934,7 @@ cron.schedule('0 6 * * 1', async () => {
     '🔗 <a href="https://anlikhaber.com">anlikhaber.com</a>',
     '',
     '<i>Bu analiz yatırım tavsiyesi içermez.</i>'
-  ].join('
-');
+  ].join('\n');
   
   await telegramGonder(TELEGRAM_KANAL, mesaj);
   if(TELEGRAM_GRUP) await telegramGonder(TELEGRAM_GRUP, mesaj);
