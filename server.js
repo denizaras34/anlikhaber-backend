@@ -299,6 +299,7 @@ async function fetchAndSaveNews() {
     }
   }
   console.log('RSS bitti. ' + yeni + ' yeni haber.');
+  if(yeni > 0) setTimeout(sentimentAnalizi, 1000);
 }
 
 // Önemli haberler için analitik thread oluştur
@@ -953,5 +954,5 @@ cron.schedule('0 */2 * * *', async () => {
 app.listen(PORT, async () => {
   console.log('AnlikHaber Backend - Port:', PORT);
   await fetchAndSaveNews();
-  sentimentAnalizi();
+  setTimeout(sentimentAnalizi, 2000); // Haberler yuklendikten 2sn sonra
 });
