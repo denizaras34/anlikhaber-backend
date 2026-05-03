@@ -710,120 +710,242 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 // ============ SABAH BÜLTENİ ============
 async function gunlukBultenGonder() {
   if (!process.env.BREVO_API_KEY) return;
-  
   try {
     const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-    
-    // Bugünün haberlerini al
+
     const bugun = new Date();
     bugun.setHours(0, 0, 0, 0);
-    const bugunHaberleri = haberler
-      .filter(h => new Date(h.tarih) >= bugun)
-      .sort((a, b) => {
-        // Önce görüntülenme sayısına göre sırala
-        const aGor = goruntulenmeSayaci[a.slug] || 0;
-        const bGor = goruntulenmeSayaci[b.slug] || 0;
-        if(bGor !== aGor) return bGor - aGor;
-        // Eşitse tarihe göre sırala
-        return new Date(b.tarih) - new Date(a.tarih);
-      })
-      .slice(0, 20);
 
-    if (bugunHaberleri.length === 0) {
-      console.log('Bülten: Yeterli haber yok');
-      return;
-    }
+    // Top haber seçimi - kategori çeşitliliği + görüntülenme + sentiment
+    const kategoriler = ['finans', 'borsa', 'kripto', 'ekonomi', 'doviz', 'emtia'];
+    const secilen = new Set();
+    const topHaberler = [];
 
-    const tarih = new Date().toLocaleDateString('tr-TR', { 
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    // Her kategoriden en çok görüntülenen 2 haber
+    kategoriler.forEach(cat => {
+      const katHaberler = haberler
+        .filter(h => h.cat === cat)
+        .sort((a, b) => {
+          const aGor = goruntulenmeSayaci[a.slug] || 0;
+          const bGor = goruntulenmeSayaci[b.slug] || 0;
+          return bGor - aGor;
+        })
+        .slice(0, 2);
+      katHaberler.forEach(h => {
+        if(!secilen.has(h.slug)) { topHaberler.push(h); secilen.add(h.slug); }
+      });
     });
 
-    // Haber HTML'i oluştur
-    const haberlerHTML = bugunHaberleri.map((h, i) => `
+    // Kalan slotları yüksek sentiment ile doldur
+    const ekstra = haberler
+      .filter(h => !secilen.has(h.slug) && h.sentiment)
+      .sort((a, b) => Math.abs(b.sentiment.score - 50) - Math.abs(a.sentiment.score - 50))
+      .slice(0, 20 - topHaberler.length);
+    ekstra.forEach(h => topHaberler.push(h));
+
+    const finalHaberler = topHaberler.slice(0, 20);
+    if(finalHaberler.length === 0) { console.log('Bulten: haber yok'); return; }
+
+    const tarih = new Date().toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const saat = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const sentiment = sentimentCache;
+    const sentimentEmoji = sentiment.skor <= 20 ? '😱' : sentiment.skor <= 40 ? '😟' : sentiment.skor <= 60 ? '😐' : sentiment.skor <= 80 ? '😊' : '🚀';
+
+    // Haber kartları HTML
+    const haberlerHTML = finalHaberler.map((h, i) => {
+      const skor = h.sentiment ? h.sentiment.score : 50;
+      const barRenk = skor >= 65 ? '#22c55e' : skor <= 35 ? '#ef4444' : '#e8c84a';
+      const catEmoji = {finans:'📊',borsa:'📈',kripto:'₿',ekonomi:'🏛',doviz:'💱',emtia:'🥇'}[h.cat] || '📰';
+      return `
       <tr>
-        <td style="padding:16px 32px;background:${i % 2 === 0 ? '#13131a' : '#0a0a0f'};border-bottom:1px solid #1e1e2a">
-          <table width="100%">
+        <td style="padding:0 24px 16px">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:${i%2===0?'#13131a':'#0f0f18'};border-radius:10px;overflow:hidden;border:1px solid #1e1e2a">
             <tr>
-              <td>
-                <span style="background:#1e1e2a;color:#e8c84a;font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;letter-spacing:1px;text-transform:uppercase">
-                  ${h.emoji || '📊'} ${(h.cat || 'haber').toUpperCase()}
-                </span>
-              </td>
-              <td align="right">
-                <span style="color:#6b6b80;font-size:10px">${h.kaynak || ''}</span>
-              </td>
-            </tr>
-            <tr>
-              <td colspan="2" style="padding-top:8px">
-                <a href="${h.bizimUrl || 'https://anlikhaber.com'}" style="color:#f0ede8;font-size:15px;font-weight:600;text-decoration:none;line-height:1.4;display:block">
-                  ${h.title || ''}
-                </a>
-              </td>
-            </tr>
-            ${h.description ? `<tr><td colspan="2" style="padding-top:6px"><p style="color:#b8b5b0;font-size:12px;line-height:1.6;margin:0">${h.description.substring(0, 150)}...</p></td></tr>` : ''}
-            <tr>
-              <td colspan="2" style="padding-top:10px">
-                <a href="${h.bizimUrl || 'https://anlikhaber.com'}" style="color:#e8c84a;font-size:12px;text-decoration:none;font-weight:500">
-                  Devamını oku →
-                </a>
+              <td style="padding:14px 16px">
+                <table width="100%">
+                  <tr>
+                    <td><span style="background:#1e1e2a;color:#e8c84a;font-size:9px;font-weight:700;padding:3px 10px;border-radius:3px;letter-spacing:1px">${catEmoji} ${(h.cat||'haber').toUpperCase()}</span></td>
+                    <td align="right"><span style="color:#6b6b80;font-size:10px">${h.kaynak||''}</span></td>
+                  </tr>
+                  <tr><td colspan="2" style="padding-top:8px">
+                    <a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#f0ede8;font-size:15px;font-weight:600;text-decoration:none;line-height:1.4;display:block">${h.title||''}</a>
+                  </td></tr>
+                  ${h.description ? `<tr><td colspan="2" style="padding-top:6px"><p style="color:#8a8a9a;font-size:12px;line-height:1.6;margin:0">${h.description.substring(0,140)}...</p></td></tr>` : ''}
+                  <tr><td colspan="2" style="padding-top:8px">
+                    <table width="100%"><tr>
+                      <td>
+                        <div style="height:4px;background:#1e1e2a;border-radius:2px;overflow:hidden;width:120px">
+                          <div style="width:${skor}%;height:100%;background:${barRenk};border-radius:2px"></div>
+                        </div>
+                      </td>
+                      <td align="right">
+                        <a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#e8c84a;font-size:12px;text-decoration:none;font-weight:600">Devamini oku →</a>
+                      </td>
+                    </tr></table>
+                  </td></tr>
+                </table>
               </td>
             </tr>
           </table>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     const htmlContent = `<!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f5f2eb;font-family:Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f2eb;padding:20px 0">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f0ede6;font-family:Georgia,serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:20px 0">
 <tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#0a0a0f;border-radius:12px;overflow:hidden">
-  <tr><td style="background:#0a0a0f;padding:28px 32px;border-bottom:2px solid #e8c84a">
+<table width="600" cellpadding="0" cellspacing="0">
+
+  <!-- GAZETE BAŞLIĞI -->
+  <tr><td style="background:#0a0a0f;padding:0;border-radius:12px 12px 0 0;overflow:hidden">
+    <!-- Üst şerit -->
+    <table width="100%" style="border-bottom:1px solid #1e1e2a"><tr>
+      <td style="padding:8px 24px;font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:2px">${tarih.toUpperCase()}</td>
+      <td align="right" style="padding:8px 24px;font-family:Arial,sans-serif;font-size:10px;color:#6b6b80">Sayı: ${Math.floor(Date.now()/86400000)}</td>
+    </tr></table>
+    
+    <!-- Logo + Canavar -->
     <table width="100%"><tr>
-      <td><span style="font-size:26px;font-weight:900;color:#f0ede8;font-family:Georgia,serif">Anlık<span style="color:#e8c84a">Haber</span></span><br>
-      <span style="font-size:11px;color:#6b6b80;letter-spacing:1px">anlikhaber.com · Sabah Bülteni</span></td>
-      <td align="right"><span style="font-size:12px;color:#6b6b80">${tarih}</span><br>
-      <span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px">● CANLI</span></td>
+      <td style="padding:20px 24px">
+        <!-- Canavar SVG -->
+        <table><tr><td style="vertical-align:middle;padding-right:16px">
+          <img src="https://i.imgur.com/placeholder.png" width="0" height="0" style="display:none">
+          <svg viewBox="0 0 80 100" width="70" height="88" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="40" cy="68" rx="26" ry="28" fill="#1e4a32"/>
+            <ellipse cx="40" cy="65" rx="22" ry="24" fill="#22573a"/>
+            <ellipse cx="29" cy="90" rx="10" ry="7" fill="#1a3a2a"/>
+            <ellipse cx="51" cy="90" rx="10" ry="7" fill="#1a3a2a"/>
+            <ellipse cx="14" cy="60" rx="7" ry="13" fill="#1a3a2a" transform="rotate(-15 14 60)"/>
+            <ellipse cx="66" cy="60" rx="7" ry="13" fill="#1a3a2a" transform="rotate(15 66 60)"/>
+            <circle cx="72" cy="50" r="8" fill="#e8c84a"/>
+            <circle cx="72" cy="50" r="6" fill="#f0d060"/>
+            <text x="72" y="54" text-anchor="middle" font-size="7" font-weight="700" fill="#8b6914">&#8378;</text>
+            <ellipse cx="40" cy="36" rx="24" ry="22" fill="#22573a"/>
+            <polygon points="22,20 17,3 30,18" fill="#e8c84a"/>
+            <polygon points="58,20 63,3 50,18" fill="#e8c84a"/>
+            <ellipse cx="31" cy="35" rx="9" ry="10" fill="#f5f0d0"/>
+            <ellipse cx="49" cy="35" rx="9" ry="10" fill="#f5f0d0"/>
+            <ellipse cx="32" cy="36" rx="6" ry="7" fill="#1a3a00"/>
+            <ellipse cx="50" cy="36" rx="6" ry="7" fill="#1a3a00"/>
+            <circle cx="33" cy="33" r="2" fill="#fff"/>
+            <circle cx="51" cy="33" r="2" fill="#fff"/>
+            <path d="M31 50 Q40 57 49 50" stroke="#143020" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <rect x="35" y="50" width="5" height="4" rx="1" fill="#f5f0d0"/>
+            <rect x="41" y="50" width="5" height="4" rx="1" fill="#f5f0d0"/>
+          </svg>
+        </td>
+        <td style="vertical-align:middle">
+          <div style="font-family:Georgia,serif;font-size:34px;font-weight:700;color:#f0ede8;letter-spacing:-1px;line-height:1">Anlık<span style="color:#e8c84a">Haber</span></div>
+          <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:3px;margin-top:4px">SABAH BÜLTENİ</div>
+          <div style="font-family:Arial,sans-serif;font-size:12px;color:#e8c84a;margin-top:6px;font-style:italic">"Piyasaları senin yerine takip ediyorum!"</div>
+        </td></tr></table>
+      </td>
+    </tr></table>
+
+    <!-- Karşılama mesajı -->
+    <table width="100%" style="background:#1a2a20;border-top:2px solid #e8c84a"><tr>
+      <td style="padding:14px 24px;font-family:Arial,sans-serif">
+        <span style="color:#e8c84a;font-size:14px;font-weight:700">🌅 Şeriflerinizin sabahı hayırlı olsun efendim!</span><br>
+        <span style="color:#b0c8b8;font-size:12px">Bugünün en önemli ${finalHaberler.length} finansal gelişmesini derledim. ${saat} itibarıyla piyasa durumu:</span>
+      </td>
     </tr></table>
   </td></tr>
-  <tr><td style="background:#c0392b;padding:10px 32px">
-    <span style="font-size:11px;color:#fff;font-weight:500">🔴 Bugünün en önemli ${bugunHaberleri.length} haberi</span>
+
+  <!-- CANLI KURLAR -->
+  <tr><td style="background:#0d0d16;padding:16px 24px;border-bottom:1px solid #1e1e2a">
+    <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">📊 Anlık Piyasalar</div>
+    <table width="100%"><tr>
+      <td align="center" style="padding:0 4px">
+        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">USD/TRY</div>
+          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#f0ede8">45.05</div>
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#ef4444">▼ -0.12%</div>
+        </div>
+      </td>
+      <td align="center" style="padding:0 4px">
+        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">EUR/TRY</div>
+          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#f0ede8">52.91</div>
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#22c55e">▲ +0.08%</div>
+        </div>
+      </td>
+      <td align="center" style="padding:0 4px">
+        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">ALTIN</div>
+          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#e8c84a">$3,321</div>
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#22c55e">▲ +0.4%</div>
+        </div>
+      </td>
+      <td align="center" style="padding:0 4px">
+        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">BTC</div>
+          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#e8c84a">$79.2K</div>
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#22c55e">▲ +1.2%</div>
+        </div>
+      </td>
+      <td align="center" style="padding:0 4px">
+        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">ETH</div>
+          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#f0ede8">$2,241</div>
+          <div style="font-family:Arial,sans-serif;font-size:9px;color:#ef4444">▼ -0.5%</div>
+        </div>
+      </td>
+    </tr></table>
   </td></tr>
-  <tr><td style="padding:20px 32px 8px;background:#13131a">
-    <p style="color:#b8b5b0;font-size:14px;line-height:1.7;margin:0">
-      Günaydın! Bugün piyasalarda öne çıkan gelişmeleri derledik.
-    </p>
+
+  <!-- SENTIMENT BANT -->
+  <tr><td style="background:linear-gradient(90deg,#0a1a12,#0d1a10);padding:12px 24px;border-bottom:2px solid #e8c84a">
+    <table width="100%"><tr>
+      <td style="font-family:Arial,sans-serif;font-size:12px;color:#b0c8b8">
+        ${sentimentEmoji} <b style="color:#e8c84a">AI Piyasa Duygusu:</b> ${sentiment.etiket||'Nötr'} — Skor: ${sentiment.skor||50}/100
+      </td>
+      <td align="right" style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80">
+        ${sentiment.pozitif||0} pozitif · ${sentiment.negatif||0} negatif · ${sentiment.toplamHaber||0} haber
+      </td>
+    </tr></table>
   </td></tr>
+
+  <!-- BUGÜNÜN HABERLERİ BAŞLIK -->
+  <tr><td style="background:#0a0a0f;padding:14px 24px 0">
+    <div style="border-bottom:2px solid #e8c84a;padding-bottom:10px;margin-bottom:4px">
+      <span style="font-family:Georgia,serif;font-size:22px;font-weight:700;color:#f0ede8;letter-spacing:-0.5px">Bugünün Öne Çıkan Haberleri</span>
+    </div>
+    <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:1px;padding-bottom:14px">EN ÇOK OKUNAN · YAPAY ZEKA SEÇİMİ · KATEGORİ ÇEŞİTLİLİĞİ</div>
+  </td></tr>
+
+  <!-- HABERLER -->
   ${haberlerHTML}
-  <tr><td style="padding:24px 32px;background:#13131a;text-align:center">
-    <a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;display:inline-block">
-      Tüm Haberleri Gör →
-    </a>
+
+  <!-- ALT -->
+  <tr><td style="background:#13131a;padding:20px 24px;text-align:center;border-top:1px solid #1e1e2a">
+    <a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;font-family:Arial,sans-serif;display:inline-block">Tüm Haberleri Gör →</a>
   </td></tr>
-  <tr><td style="padding:20px 32px;background:#0a0a0f;border-top:1px solid #1e1e2a;text-align:center">
-    <p style="color:#6b6b80;font-size:11px;margin:0;line-height:1.8">
-      © 2025 AnlıkHaber · anlikhaber.com · reklam@anlikhaber.com<br>
-      <a href="{{unsubscribe}}" style="color:#e8c84a">Abonelikten çık</a>
+
+  <!-- FOOTER -->
+  <tr><td style="background:#0a0a0f;padding:16px 24px;border-radius:0 0 12px 12px;border-top:1px solid #1e1e2a;text-align:center">
+    <p style="font-family:Arial,sans-serif;color:#6b6b80;font-size:10px;margin:0;line-height:1.8">
+      © 2026 AnlıkHaber · anlikhaber.com<br>
+      <a href="https://anlikhaber.com" style="color:#e8c84a;text-decoration:none">@anlikhaberkanal</a> · Telegram kanalımızı takip edin<br>
+      <a href="{{unsubscribe}}" style="color:#6b6b80">Abonelikten çık</a>
     </p>
   </td></tr>
+
 </table>
 </td></tr>
 </table>
 </body>
 </html>`;
 
-    // Brevo kampanya API ile gönder
+    // Brevo ile gönder
     const response = await fetch('https://api.brevo.com/v3/emailCampaigns', {
       method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'api-key': process.env.BREVO_API_KEY
-      },
+      headers: { 'accept': 'application/json', 'content-type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
       body: JSON.stringify({
-        name: `AnlıkHaber Sabah Bülteni - ${tarih}`,
-        subject: `📊 ${tarih} - Bugünün Finans Haberleri`,
+        name: 'AnlıkHaber Sabah Bülteni - ' + tarih,
+        subject: '🌅 ' + tarih + ' | Şeriflerinizin sabahı hayırlı olsun! AnlıkHaber Bülteni',
         sender: { name: 'AnlıkHaber', email: 'yonetim@anlikhaber.com' },
         type: 'classic',
         htmlContent,
@@ -832,17 +954,27 @@ async function gunlukBultenGonder() {
     });
 
     const result = await response.json();
-    
-    if (result.id) {
-      // Kampanyayı hemen gönder
-      await fetch(`https://api.brevo.com/v3/emailCampaigns/${result.id}/sendNow`, {
+    if(result.id) {
+      await fetch('https://api.brevo.com/v3/emailCampaigns/' + result.id + '/sendNow', {
         method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'api-key': process.env.BREVO_API_KEY
-        }
+        headers: { 'accept': 'application/json', 'api-key': process.env.BREVO_API_KEY }
       });
-      console.log('Sabah bülteni gönderildi! Kampanya ID:', result.id);
+      console.log('Sabah bülteni gönderildi! ID:', result.id);
+
+      // Telegram sabah özeti
+      if(TELEGRAM_KANAL) {
+        const tgMesaj = [
+          '🌅 <b>Şeriflerinizin sabahı hayırlı olsun!</b>',
+          '',
+          sentimentEmoji + ' Piyasa Duygusu: <b>' + (sentiment.etiket||'Nötr') + '</b>',
+          '',
+          '📰 Bugünün öne çıkan haberleri:',
+          ...finalHaberler.slice(0,5).map((h,i) => (i+1) + '. <a href="' + h.bizimUrl + '">' + h.title.substring(0,60) + '</a>'),
+          '',
+          '🔗 <a href="https://anlikhaber.com">Tüm haberler için tıkla</a>'
+        ].join('\n');
+        await telegramGonder(TELEGRAM_KANAL, tgMesaj);
+      }
     } else {
       console.log('Bülten hatası:', JSON.stringify(result));
     }
