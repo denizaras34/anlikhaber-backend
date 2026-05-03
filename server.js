@@ -15,8 +15,18 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_KANAL = process.env.TELEGRAM_KANAL; // @anlikhaber veya -100xxxxxxx
 const TELEGRAM_GRUP = process.env.TELEGRAM_GRUP;   // grup ID
 
+let telegramRateLimit = 0;
+
 async function telegramGonder(chatId, mesaj) {
   if(!TELEGRAM_TOKEN || !chatId) return;
+  
+  // Rate limit kontrolü
+  const now = Date.now();
+  if(now < telegramRateLimit) {
+    console.log('Telegram rate limit - bekleniyor...');
+    return;
+  }
+
   try {
     const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
     const r = await fetch('https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage', {
@@ -26,12 +36,18 @@ async function telegramGonder(chatId, mesaj) {
         chat_id: chatId,
         text: mesaj,
         parse_mode: 'HTML',
-        disable_web_page_preview: false
+        disable_web_page_preview: true
       })
     });
     const d = await r.json();
-    if(!d.ok) console.log('Telegram hata:', JSON.stringify(d));
-    else console.log('Telegram OK:', chatId);
+    if(!d.ok) {
+      if(d.parameters && d.parameters.retry_after) {
+        telegramRateLimit = Date.now() + (d.parameters.retry_after * 1000);
+        console.log('Telegram rate limit:', d.parameters.retry_after + 'sn');
+      }
+    } else {
+      console.log('Telegram OK:', chatId);
+    }
   } catch(e) {
     console.log('Telegram hata:', e.message);
   }
@@ -277,19 +293,18 @@ async function fetchAndSaveNews() {
         yeni++;
         seffaflikStats.haftalikEklenen++;
 
-        // Telegram kanala gönder
-        if(TELEGRAM_KANAL) {
+        // Telegram kanala gönder - max 3 haber per fetch, 5sn arayla
+        if(TELEGRAM_KANAL && yeni <= 3) {
           const tgMesaj = [
             haber.emoji + ' <b>' + haber.title + '</b>',
             '',
-            (haber.description || '').substring(0, 200) + '...',
+            (haber.description || '').substring(0, 150) + '...',
             '',
-            '🔗 <a href="' + haber.bizimUrl + '">Devamını oku</a>',
-            '📌 Kaynak: ' + haber.kaynak,
-            '',
+            '🔗 <a href="' + haber.bizimUrl + '">Devamini oku</a>',
+            '📌 ' + haber.kaynak,
             '#' + (haber.cat || 'finans') + ' #anlikhaber'
           ].join('\n');
-          setTimeout(() => telegramGonder(TELEGRAM_KANAL, tgMesaj), yeni * 2000);
+          setTimeout(() => telegramGonder(TELEGRAM_KANAL, tgMesaj), yeni * 5000);
         }
         if (haberler.length > 500) haberler = haberler.slice(0, 500);
         console.log('Haber eklendi:', turkishTitle.substring(0, 60));
