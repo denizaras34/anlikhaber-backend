@@ -300,7 +300,7 @@ async function fetchAndSaveNews() {
             '',
             (haber.description || '').substring(0, 150) + '...',
             '',
-            '🔗 <a href="' + haber.bizimUrl + '">Devamini oku</a>',
+            '🔗 <a href="' + haber.bizimUrl + '">Devamını oku</a>',
             '📌 ' + haber.kaynak,
             '#' + (haber.cat || 'finans') + ' #anlikhaber'
           ].join('\n');
@@ -779,7 +779,7 @@ async function gunlukBultenGonder() {
                         </div>
                       </td>
                       <td align="right">
-                        <a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#e8c84a;font-size:12px;text-decoration:none;font-weight:600">Devamini oku →</a>
+                        <a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#e8c84a;font-size:12px;text-decoration:none;font-weight:600">Devamını oku →</a>
                       </td>
                     </tr></table>
                   </td></tr>
@@ -854,46 +854,17 @@ async function gunlukBultenGonder() {
     </tr></table>
   </td></tr>
 
-  <!-- CANLI KURLAR -->
-  <tr><td style="background:#0d0d16;padding:16px 24px;border-bottom:1px solid #1e1e2a">
-    <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">📊 Anlık Piyasalar</div>
+  <!-- CANLI KURLAR NOTU -->
+  <tr><td style="background:#0d0d16;padding:14px 24px;border-bottom:1px solid #1e1e2a">
     <table width="100%"><tr>
-      <td align="center" style="padding:0 4px">
-        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">USD/TRY</div>
-          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#f0ede8">45.05</div>
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#ef4444">▼ -0.12%</div>
-        </div>
+      <td style="font-family:Arial,sans-serif;font-size:12px;color:#b0c8b8">
+        📊 <b style="color:#e8c84a">Güncel piyasa verilerine ulas:</b>
       </td>
-      <td align="center" style="padding:0 4px">
-        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">EUR/TRY</div>
-          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#f0ede8">52.91</div>
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#22c55e">▲ +0.08%</div>
-        </div>
-      </td>
-      <td align="center" style="padding:0 4px">
-        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">ALTIN</div>
-          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#e8c84a">$3,321</div>
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#22c55e">▲ +0.4%</div>
-        </div>
-      </td>
-      <td align="center" style="padding:0 4px">
-        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">BTC</div>
-          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#e8c84a">$79.2K</div>
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#22c55e">▲ +1.2%</div>
-        </div>
-      </td>
-      <td align="center" style="padding:0 4px">
-        <div style="background:#13131a;border:1px solid #1e1e2a;border-radius:8px;padding:10px 8px;text-align:center">
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#6b6b80;margin-bottom:4px">ETH</div>
-          <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#f0ede8">$2,241</div>
-          <div style="font-family:Arial,sans-serif;font-size:9px;color:#ef4444">▼ -0.5%</div>
-        </div>
+      <td align="right">
+        <a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;font-size:11px;font-weight:700;padding:6px 14px;border-radius:6px;text-decoration:none;font-family:Arial,sans-serif">Canli Kurlar →</a>
       </td>
     </tr></table>
+    <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;margin-top:6px">USD/TRY · EUR/TRY · Altin · BTC · ETH · BIST100 — Anlik veriler anlikhaber.com adresinde</div>
   </td></tr>
 
   <!-- SENTIMENT BANT -->
