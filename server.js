@@ -443,14 +443,20 @@ function haberSentimentSkoru(haber) {
     if(metin.includes(kelime)) { puan += agirlik; eslesme++; }
   }
 
-  // Baz puan 50, normalize et
-  const normalPuan = Math.max(0, Math.min(100, 50 + (puan * 5)));
+  // Baz puan 50, normalize et + polarize
+  let normalPuan = Math.max(5, Math.min(95, 50 + (puan * 6)));
   
+  // Nötrei azalt — 42-58 arasındaysa yönüne göre it
+  if(normalPuan > 50 && normalPuan < 60) normalPuan = Math.min(92, normalPuan + 8);
+  else if(normalPuan < 50 && normalPuan > 40) normalPuan = Math.max(8, normalPuan - 8);
+  else if(normalPuan === 50) normalPuan = puan >= 0 ? 55 : 45;
+  
+  normalPuan = Math.round(normalPuan);
+
   let label;
   if(normalPuan <= 20) label = 'Panik';
-  else if(normalPuan <= 35) label = 'Negatif';
-  else if(normalPuan <= 50) label = 'Temkinli';
-  else if(normalPuan <= 65) label = 'Nötr';
+  else if(normalPuan <= 38) label = 'Negatif';
+  else if(normalPuan <= 62) label = 'Nötr';
   else if(normalPuan <= 80) label = 'Pozitif';
   else label = 'Coşkulu';
 
@@ -495,7 +501,21 @@ function sentimentAnalizi() {
   });
 
   const toplam = sonHaberler.length;
-  const normalSkor = Math.round(toplamSkor / toplam);
+  let normalSkor = Math.round(toplamSkor / toplam);
+
+  // Polarizasyon — nötrden kaç, hangisine yakınsa oraya çek
+  // 45-55 arasındaysa ±8 puan ekle yönüne göre
+  // Ama max 85, min 15 — absürt seviyelere çıkma
+  if (normalSkor > 50) {
+    const uzaklik = normalSkor - 50;
+    normalSkor = Math.min(85, Math.round(50 + uzaklik * 1.6));
+  } else if (normalSkor < 50) {
+    const uzaklik = 50 - normalSkor;
+    normalSkor = Math.max(15, Math.round(50 - uzaklik * 1.6));
+  } else {
+    // Tam 50 ise pozitif/negatif sayısına bak
+    normalSkor = pozitif >= negatif ? 54 : 46;
+  }
 
   let etiket;
   if (normalSkor <= 20) etiket = 'Aşırı Karamsar (Panik)';
