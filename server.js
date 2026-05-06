@@ -137,10 +137,19 @@ function isOnemliHaber(title, cat) {
 
 function isTurkish(text) {
   if(!text) return false;
+  
+  // Arapça, Farsça, İbranice, Çince, Japonca, Korece — kesinlikle reddet
+  const yabanciKarakteler = /[؀-ۿݐ-ݿ֐-׿一-鿿぀-ヿ가-힯]/;
+  if(yabanciKarakteler.test(text)) return false;
+  
+  // Türkçe karakter varsa kabul et
   const trChars = /[çğıöşüÇĞİÖŞÜ]/;
-  const enWords = /(the|and|for|that|this|with|from|have|been|will|said|says|were|they|their|which|would|could|about|after|before|during|market|stock|shares|trading|investors|percent|billion|million)/i;
   if(trChars.test(text)) return true;
+  
+  // İngilizce kelimeler varsa İngilizce — sadece EN kaynaklı haberler için
+  const enWords = /(the |and |for |that |this |with |from |have |been |will |said |says |were |they |their |which |would |could |about |after |before |during |market|stock|shares|trading|investors|percent|billion|million)/i;
   if(enWords.test(text)) return false;
+  
   return true;
 }
 
