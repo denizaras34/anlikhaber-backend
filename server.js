@@ -860,13 +860,37 @@ app.get('/api/sentiment', (req, res) => {
 });
 
 // Tek haber sentiment skoru
-// Piyasa verileri endpoint - CORS sorununu çözer
-app.get('/api/piyasa', async (req, res) => {
+// Piyasa cache - her 5 dakikada bir güncelle
+let piyasaCache = {};
+let piyasaSonGuncelleme = 0;
+
+async function piyasaGuncelle() {
+  const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
   const result = {};
+
+  // 1. Kripto - Binance (gerçek zamanlı, güvenilir)
   try {
-    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-    
-    // Döviz - Frankfurter
+    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT","BNBUSDT"]');
+    const data = await r.json();
+    data.forEach(d => {
+      const price = parseFloat(d.lastPrice);
+      const chg = parseFloat(d.priceChangePercent).toFixed(2);
+      if(d.symbol === 'BTCUSDT') { result.btc = Math.round(price); result.btcChg = chg; }
+      if(d.symbol === 'ETHUSDT') { result.eth = Math.round(price); result.ethChg = chg; }
+    });
+  } catch(e) { console.log('Binance hata:', e.message); }
+
+  // 2. Döviz - ExchangeRate-API (saatlik güncelleme, ücretsiz)
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/USD');
+    const d = await r.json();
+    if(d.rates) {
+      result.usdtry = d.rates.TRY ? d.rates.TRY.toFixed(2) : null;
+      result.eurtry = (d.rates.TRY && d.rates.EUR) ? (d.rates.TRY / d.rates.EUR).toFixed(2) : null;
+      result.gbptry = (d.rates.TRY && d.rates.GBP) ? (d.rates.TRY / d.rates.GBP).toFixed(2) : null;
+    }
+  } catch(e) {
+    // ExchangeRate-API başarısız — Frankfurter fallback
     try {
       const r = await fetch('https://api.frankfurter.app/latest?from=USD&to=TRY,EUR,GBP');
       const d = await r.json();
@@ -875,28 +899,53 @@ app.get('/api/piyasa', async (req, res) => {
         result.eurtry = (d.rates.TRY && d.rates.EUR) ? (d.rates.TRY / d.rates.EUR).toFixed(2) : null;
         result.gbptry = (d.rates.TRY && d.rates.GBP) ? (d.rates.TRY / d.rates.GBP).toFixed(2) : null;
       }
-    } catch(e) {}
+    } catch(e2) {}
+  }
 
-    // Altın
+  // 3. Altın - MetalpriceAPI (ücretsiz tier, günde 100 istek)
+  try {
+    const r = await fetch('https://api.metals.live/v1/spot/gold');
+    const d = await r.json();
+    if(d && d[0] && d[0].gold) result.gold = Math.round(d[0].gold);
+  } catch(e) {
+    // Fallback: GoldAPI.io ücretsiz tier
     try {
-      const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
-      const d = await r.json();
-      if(d.rates && d.rates.USD) result.gold = Math.round(1 / d.rates.USD);
-    } catch(e) {}
-
-    // Kripto - Binance
-    try {
-      const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT"]');
-      const data = await r.json();
-      data.forEach(d => {
-        if(d.symbol === 'BTCUSDT') { result.btc = Math.round(parseFloat(d.lastPrice)); result.btcChg = parseFloat(d.priceChangePercent).toFixed(2); }
-        if(d.symbol === 'ETHUSDT') { result.eth = parseFloat(d.lastPrice).toFixed(0); result.ethChg = parseFloat(d.priceChangePercent).toFixed(2); }
+      const r = await fetch('https://www.goldapi.io/api/XAU/USD', {
+        headers: { 'x-access-token': 'goldapi-free' }
       });
-    } catch(e) {}
+      const d = await r.json();
+      if(d.price) result.gold = Math.round(d.price);
+    } catch(e2) {
+      // Son fallback: Frankfurter XAU
+      try {
+        const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
+        const d = await r.json();
+        if(d.rates && d.rates.USD) result.gold = Math.round(1 / d.rates.USD);
+      } catch(e3) {}
+    }
+  }
 
-  } catch(e) {}
-  
-  res.json(result);
+  // 4. Petrol - AlphaVantage ücretsiz (günde 25 istek)
+  // Şimdilik statik bırak, ileride eklenebilir
+  // result.petrol = null;
+
+  result.guncelleme = new Date().toISOString();
+  piyasaCache = result;
+  piyasaSonGuncelleme = Date.now();
+  console.log('Piyasa güncellendi:', JSON.stringify(result));
+  return result;
+}
+
+// Her 5 dakikada bir güncelle
+cron.schedule('*/5 * * * *', piyasaGuncelle);
+
+// Piyasa verileri endpoint
+app.get('/api/piyasa', async (req, res) => {
+  // Cache 5 dakikadan eskiyse güncelle
+  if(Date.now() - piyasaSonGuncelleme > 5 * 60 * 1000 || !piyasaCache.btc) {
+    await piyasaGuncelle();
+  }
+  res.json(piyasaCache);
 });
 
 app.get('/api/sentiment/:slug', (req, res) => {
