@@ -860,6 +860,45 @@ app.get('/api/sentiment', (req, res) => {
 });
 
 // Tek haber sentiment skoru
+// Piyasa verileri endpoint - CORS sorununu çözer
+app.get('/api/piyasa', async (req, res) => {
+  const result = {};
+  try {
+    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+    
+    // Döviz - Frankfurter
+    try {
+      const r = await fetch('https://api.frankfurter.app/latest?from=USD&to=TRY,EUR,GBP');
+      const d = await r.json();
+      if(d.rates) {
+        result.usdtry = d.rates.TRY ? d.rates.TRY.toFixed(2) : null;
+        result.eurtry = (d.rates.TRY && d.rates.EUR) ? (d.rates.TRY / d.rates.EUR).toFixed(2) : null;
+        result.gbptry = (d.rates.TRY && d.rates.GBP) ? (d.rates.TRY / d.rates.GBP).toFixed(2) : null;
+      }
+    } catch(e) {}
+
+    // Altın
+    try {
+      const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
+      const d = await r.json();
+      if(d.rates && d.rates.USD) result.gold = Math.round(1 / d.rates.USD);
+    } catch(e) {}
+
+    // Kripto - Binance
+    try {
+      const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT"]');
+      const data = await r.json();
+      data.forEach(d => {
+        if(d.symbol === 'BTCUSDT') { result.btc = Math.round(parseFloat(d.lastPrice)); result.btcChg = parseFloat(d.priceChangePercent).toFixed(2); }
+        if(d.symbol === 'ETHUSDT') { result.eth = parseFloat(d.lastPrice).toFixed(0); result.ethChg = parseFloat(d.priceChangePercent).toFixed(2); }
+      });
+    } catch(e) {}
+
+  } catch(e) {}
+  
+  res.json(result);
+});
+
 app.get('/api/sentiment/:slug', (req, res) => {
   const haber = haberler.find(h => h.slug === req.params.slug);
   if(!haber) return res.status(404).json({ error: 'Bulunamadi' });
