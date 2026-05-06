@@ -662,6 +662,150 @@ app.get('/api/anket/uret', async (req, res) => {
 });
 
 
+
+// ============ DERİN ANALİZ SİSTEMİ ============
+
+let derinAnalizler = []; // Son analizler cache
+
+// Önemli haberleri seç ve analiz et
+async function derinAnalizUret() {
+  if(!anthropic) return;
+  
+  // En önemli 3 haberi seç: yüksek/düşük sentiment + anahtar kelimeler
+  const onemliHaberler = haberler
+    .filter(h => h.sentiment && h.title)
+    .filter(h => {
+      const t = h.title.toLowerCase();
+      return /fed|tcmb|merkez banka|faiz|altin|bitcoin|btc|dolar|enflasyon|bist|borsa/i.test(t);
+    })
+    .sort((a, b) => Math.abs(b.sentiment.score - 50) - Math.abs(a.sentiment.score - 50))
+    .slice(0, 3);
+
+  if(onemliHaberler.length === 0) return;
+
+  const yeniAnalizler = [];
+
+  for(const haber of onemliHaberler) {
+    // Zaten analiz edilmişse atla
+    if(derinAnalizler.find(a => a.haberSlug === haber.slug)) continue;
+
+    try {
+      await sleep(2000);
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        messages: [{
+          role: 'user',
+          content: `Sen AnlıkHaber için yazan kıdemli bir Türk finans analistisin.
+
+Haber başlığı: ${haber.title}
+Haber özeti: ${(haber.description || '').substring(0, 300)}
+Kategori: ${haber.cat}
+Duygu skoru: ${haber.sentiment.score}/100 (${haber.sentiment.label})
+
+Bu haberi derinlemesine analiz et. SADECE JSON döndür:
+
+{
+  "ozet": "Haberin özü 2 cümlede. Net, akademik Türkçe.",
+  "etkiler": [
+    "Altın/TL/BTC/borsa üzerindeki 1. olası etki",
+    "2. olası etki", 
+    "3. olası etki"
+  ],
+  "riskler": "Bu gelişmenin yaratabileceği riskler 1 cümlede",
+  "firsatlar": "Bu gelişmenin sunduğu fırsatlar 1 cümlede",
+  "xThread": "X için thread başlangıcı (max 240 karakter, emoji ile)",
+  "uyari": "Bu analiz yatırım tavsiyesi değildir."
+}`
+        }]
+      });
+
+      const text = response.content[0].text.trim();
+      const match = text.match(/\{[\s\S]*\}/);
+      if(!match) continue;
+      const analiz = JSON.parse(match[0]);
+
+      const derinAnaliz = {
+        id: 'analiz_' + Date.now(),
+        haberSlug: haber.slug,
+        haberTitle: haber.title,
+        haberCat: haber.cat,
+        sentimentSkor: haber.sentiment.score,
+        sentimentLabel: haber.sentiment.label,
+        tarih: new Date().toISOString(),
+        ...analiz
+      };
+
+      derinAnalizler.unshift(derinAnaliz);
+      yeniAnalizler.push(derinAnaliz);
+
+      // Max 20 analiz tut
+      if(derinAnalizler.length > 20) derinAnalizler = derinAnalizler.slice(0, 20);
+
+      console.log('Derin analiz üretildi:', haber.title.substring(0, 50));
+
+      // X'e thread at
+      if(analiz.xThread && process.env.X_API_KEY) {
+        try {
+          await sleep(3000);
+          const tweetText = (analiz.xThread + '\n\n🔗 ' + haber.bizimUrl + '\n#anlikhaber #analiz').substring(0, 280);
+          await twitter.v2.tweet(tweetText);
+          console.log('Analiz tweeti atıldı!');
+        } catch(e) {
+          console.log('Analiz tweet hatası:', e.message);
+        }
+      }
+
+      // Telegram'a gönder
+      if(TELEGRAM_KANAL && analiz.ozet) {
+        const konuEmoji = {finans:'📊',borsa:'📈',kripto:'₿',ekonomi:'🏛',doviz:'💱',emtia:'🥇'};
+        const emoji = konuEmoji[haber.cat] || '📊';
+        const tgMesaj = [
+          emoji + ' <b>AnlıkHaber Derin Analiz</b>',
+          '',
+          '<b>' + haber.title + '</b>',
+          '',
+          '📝 ' + analiz.ozet,
+          '',
+          '📌 Olası Etkiler:',
+          ...(analiz.etkiler || []).map((e, i) => (i+1) + '. ' + e),
+          '',
+          '⚠️ ' + analiz.uyari,
+          '',
+          '🔗 <a href="' + haber.bizimUrl + '">Haberi oku</a>'
+        ].join('\n');
+        await telegramGonder(TELEGRAM_KANAL, tgMesaj);
+      }
+
+    } catch(e) {
+      console.log('Derin analiz hatası:', e.message);
+    }
+  }
+
+  return yeniAnalizler;
+}
+
+// Her 4 saatte bir derin analiz üret
+cron.schedule('0 */4 * * *', derinAnalizUret);
+
+// Derin analiz endpoint
+app.get('/api/analizler', (req, res) => {
+  res.json(derinAnalizler);
+});
+
+app.get('/api/analiz/:slug', (req, res) => {
+  const analiz = derinAnalizler.find(a => a.haberSlug === req.params.slug);
+  if(!analiz) return res.status(404).json(null);
+  res.json(analiz);
+});
+
+// Manuel analiz tetikle (admin)
+app.get('/api/analiz-uret', async (req, res) => {
+  res.json({ mesaj: 'Analiz üretiliyor...' });
+  derinAnalizUret();
+});
+
+
 // ============ HABER BAŞINA DUYGU SKORU ============
 
 const pozitifAgirlik = {
