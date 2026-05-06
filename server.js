@@ -257,9 +257,10 @@ async function fetchAndSaveNews() {
         }
 
         let resim = null;
-        if (item.enclosure && item.enclosure.url) resim = item.enclosure.url;
-        else if (item['media:content'] && item['media:content']['$'] && item['media:content']['$'].url) resim = item['media:content']['$'].url;
-        else if (item.image) resim = item.image;
+        const isValidImg = (url) => url && url.startsWith('http') && !url.includes('base64') && !url.endsWith('=.jpg') && !url.includes('=.jpg?');
+        if (item.enclosure && item.enclosure.url && isValidImg(item.enclosure.url)) resim = item.enclosure.url;
+        else if (item['media:content'] && item['media:content']['$'] && isValidImg(item['media:content']['$'].url)) resim = item['media:content']['$'].url;
+        else if (item.image && isValidImg(item.image)) resim = item.image;
 
         let aiNotu = '';
         if (feed.lang === 'tr') {
