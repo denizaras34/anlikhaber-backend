@@ -388,6 +388,270 @@ let sentimentCache = {
   sonGuncelleme: new Date().toISOString(),
 };
 
+
+// ============ ANKET SİSTEMİ ============
+
+// In-memory DB (Railway restart'ta sıfırlanır — ileride MongoDB eklenebilir)
+let anketler = []; // Tüm sorular
+let anketOylar = {}; // { anketId: { katiliyorum: N, katilmiyorum: N, kararsizim: N } }
+
+// Anket durumları
+const ANKET_DURUM = { TASLAK: 'taslak', ONAYLANDI: 'onaylandi', REDDEDILDI: 'reddedildi', YAYINDA: 'yayinda', TAMAMLANDI: 'tamamlandi' };
+
+// Anket sorusu oluştur
+async function anketSorusuUret() {
+  if(!anthropic) return null;
+  try {
+    const gundem = haberler.slice(0, 30).map(h => h.title).join('\n');
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      messages: [{
+        role: 'user',
+        content: `Sen bir finansal analist ve editörsün. Aşağıdaki güncel finans haberlerinden yola çıkarak 1 adet anket sorusu üret.
+
+Gündem:
+${gundem.substring(0, 1000)}
+
+KURALLAR:
+1. Soru altın, BTC, TL/USD/EUR veya emtia ile ilgili olsun
+2. Soru kusursuz akademik Türkçeyle yazılmış olsun
+3. Mantık hatası olmasın — soru net, tarafsız ve manipülasyon içermemeli
+4. Soru bir öngörü veya değerlendirme istesin (örn: "... beklentiniz nedir?", "... düşünüyor musunuz?")
+5. Seçenekler sabit: Katılıyorum / Katılmıyorum / Kararsızım
+
+Sadece JSON döndür:
+{"soru": "Soru metni burada", "konu": "altin/btc/usd/eur/emtia/faiz", "aciklama": "Sorunun neden önemli olduğunu 1 cümle ile açıkla"}`
+      }]
+    });
+    const text = response.content[0].text.trim();
+    const match = text.match(/\{[\s\S]*?\}/);
+    if(!match) return null;
+    const parsed = JSON.parse(match[0]);
+    return parsed;
+  } catch(e) {
+    console.log('Anket soru üretim hatası:', e.message);
+    return null;
+  }
+}
+
+// Haftalık 5 soru üret — Her Pazar 18:00 TR (15:00 UTC)
+cron.schedule('0 15 * * 0', async () => {
+  console.log('Haftalık anket soruları üretiliyor...');
+  const sorular = [];
+  const konular = ['altin', 'btc', 'usd', 'eur', 'emtia'];
+  
+  for(const konu of konular) {
+    await sleep(2000);
+    const soru = await anketSorusuUret();
+    if(soru) {
+      const anket = {
+        id: 'anket_' + Date.now() + '_' + konu,
+        soru: soru.soru,
+        konu: soru.konu || konu,
+        aciklama: soru.aciklama || '',
+        durum: ANKET_DURUM.TASLAK,
+        olusturmaTarihi: new Date().toISOString(),
+        yayinTarihi: null,
+        tweetId: null,
+        oylar: { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 },
+        adminNotu: ''
+      };
+      anketler.push(anket);
+      sorular.push(anket);
+      console.log('Anket taslak:', anket.soru.substring(0, 50));
+    }
+  }
+  
+  // Admin'e bildirim (Telegram)
+  if(TELEGRAM_KANAL && sorular.length > 0) {
+    const mesaj = [
+      '📋 <b>Yeni Anket Soruları Admin Onayı Bekliyor</b>',
+      '',
+      sorular.map((s, i) => `${i+1}. ${s.soru.substring(0, 80)}...`).join('\n'),
+      '',
+      '⚠️ Onaylamak için admin paneline girin.',
+      '🔗 anlikhaber.com/admin'
+    ].join('\n');
+    await telegramGonder(TELEGRAM_KANAL, mesaj);
+  }
+  
+  console.log(`${sorular.length} anket sorusu oluşturuldu, admin onayı bekliyor.`);
+});
+
+// Anket yayınlama — Her gün 09:00 TR (06:00 UTC) onaylananları yayınla
+cron.schedule('0 6 * * *', async () => {
+  const bugun = new Date().getDay(); // 0=Pazar, 1=Pzt, 3=Çrş, 5=Cum
+  const gunSirasi = { 1: 0, 3: 1, 5: 2, 0: 3, 2: 4 }; // Hangi gün hangi soru
+  const siraNo = gunSirasi[bugun];
+  if(siraNo === undefined) return;
+
+  // Onaylı ama henüz yayınlanmamış soruları sıraya göre al
+  const onaylilar = anketler
+    .filter(a => a.durum === ANKET_DURUM.ONAYLANDI)
+    .sort((a, b) => new Date(a.olusturmaTarihi) - new Date(b.olusturmaTarihi));
+  
+  if(onaylilar.length === 0) return;
+  const anket = onaylilar[0]; // En eski onaylıyı yayınla
+
+  // X'e tweet at
+  if(process.env.X_API_KEY) {
+    try {
+      const konuEmoji = { altin: '🥇', btc: '₿', usd: '💵', eur: '💶', emtia: '🛢', faiz: '📈' };
+      const emoji = konuEmoji[anket.konu] || '📊';
+      const tweetText = [
+        `${emoji} <b>AnlıkHaber Haftalık Anket</b>`,
+        ``,
+        `📌 ${anket.soru}`,
+        ``,
+        `1️⃣ Katılıyorum`,
+        `2️⃣ Katılmıyorum`,  
+        `3️⃣ Kararsızım`,
+        ``,
+        `#${anket.konu} #anket #finans #anlikhaber`
+      ].join('\n').substring(0, 280);
+
+      const tweet = await twitter.v2.tweet(tweetText);
+      anket.tweetId = tweet.data.id;
+      anket.durum = ANKET_DURUM.YAYINDA;
+      anket.yayinTarihi = new Date().toISOString();
+      console.log('Anket tweeti atıldı:', anket.soru.substring(0, 50));
+    } catch(e) {
+      console.log('Anket tweet hatası:', e.message);
+    }
+  }
+});
+
+// Sonuç paylaşımı — Yayına giren anketin 72 saat sonrasında sonuç at
+// Her saat kontrol et
+cron.schedule('0 * * * *', async () => {
+  const simdi = new Date();
+  const yayindakiler = anketler.filter(a => {
+    if(a.durum !== ANKET_DURUM.YAYINDA || !a.yayinTarihi) return false;
+    const fark = (simdi - new Date(a.yayinTarihi)) / (1000 * 60 * 60);
+    return fark >= 72;
+  });
+
+  for(const anket of yayindakiler) {
+    const oylar = anketOylar[anket.id] || { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 };
+    const toplam = oylar.katiliyorum + oylar.katilmiyorum + oylar.kararsizim;
+    
+    if(toplam === 0) {
+      // Oy yoksa sadece arşivle
+      anket.durum = ANKET_DURUM.TAMAMLANDI;
+      continue;
+    }
+
+    const pKati = Math.round(oylar.katiliyorum / toplam * 100);
+    const pKatil = Math.round(oylar.katilmiyorum / toplam * 100);
+    const pKarar = 100 - pKati - pKatil;
+
+    // Sonuç tweet — ham veri, değiştirilmez
+    const konuEmoji = { altin: '🥇', btc: '₿', usd: '💵', eur: '💶', emtia: '🛢', faiz: '📈' };
+    const emoji = konuEmoji[anket.konu] || '📊';
+    
+    const tweetText = [
+      `${emoji} AnlıkHaber Anket Sonucu`,
+      ``,
+      `"${anket.soru.substring(0, 100)}"`,
+      ``,
+      `✅ Katılıyorum: %${pKati}`,
+      `❌ Katılmıyorum: %${pKatil}`,
+      `🤔 Kararsızım: %${pKarar}`,
+      ``,
+      `👥 Toplam ${toplam} oy`,
+      ``,
+      `#${anket.konu} #anketsonucu #finans #anlikhaber`
+    ].join('\n').substring(0, 280);
+
+    try {
+      await twitter.v2.tweet(tweetText);
+      anket.durum = ANKET_DURUM.TAMAMLANDI;
+      anket.sonuclar = { pKati, pKatil, pKarar, toplam };
+      console.log('Anket sonuç tweeti atıldı:', anket.soru.substring(0, 50));
+      
+      // Telegram'a da gönder
+      if(TELEGRAM_KANAL) {
+        await telegramGonder(TELEGRAM_KANAL, tweetText);
+      }
+    } catch(e) {
+      console.log('Sonuç tweet hatası:', e.message);
+    }
+    
+    await sleep(3000);
+  }
+});
+
+// ============ ANKET API ENDPOİNTLERİ ============
+
+// Tüm anketler (admin)
+app.get('/api/anketler', (req, res) => {
+  res.json(anketler.map(a => ({
+    ...a,
+    oylar: anketOylar[a.id] || { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 }
+  })));
+});
+
+// Aktif anket (site)
+app.get('/api/anket/aktif', (req, res) => {
+  const aktif = anketler.find(a => a.durum === ANKET_DURUM.YAYINDA);
+  if(!aktif) return res.json(null);
+  const oylar = anketOylar[aktif.id] || { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 };
+  const toplam = oylar.katiliyorum + oylar.katilmiyorum + oylar.kararsizim;
+  res.json({ ...aktif, oylar, toplam });
+});
+
+// Oy ver
+app.post('/api/anket/:id/oy', (req, res) => {
+  const { oy } = req.body; // 'katiliyorum' | 'katilmiyorum' | 'kararsizim'
+  const anket = anketler.find(a => a.id === req.params.id);
+  if(!anket || anket.durum !== ANKET_DURUM.YAYINDA) return res.status(400).json({ error: 'Anket aktif değil' });
+  if(!['katiliyorum','katilmiyorum','kararsizim'].includes(oy)) return res.status(400).json({ error: 'Geçersiz oy' });
+  
+  if(!anketOylar[anket.id]) anketOylar[anket.id] = { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 };
+  anketOylar[anket.id][oy]++;
+  res.json({ ok: true, oylar: anketOylar[anket.id] });
+});
+
+// Admin: Onayla
+app.post('/api/anket/:id/onayla', (req, res) => {
+  const anket = anketler.find(a => a.id === req.params.id);
+  if(!anket) return res.status(404).json({ error: 'Bulunamadı' });
+  anket.durum = ANKET_DURUM.ONAYLANDI;
+  anket.adminNotu = req.body.not || '';
+  console.log('Anket onaylandı:', anket.soru.substring(0, 50));
+  res.json({ ok: true });
+});
+
+// Admin: Reddet
+app.post('/api/anket/:id/reddet', (req, res) => {
+  const anket = anketler.find(a => a.id === req.params.id);
+  if(!anket) return res.status(404).json({ error: 'Bulunamadı' });
+  anket.durum = ANKET_DURUM.REDDEDILDI;
+  anket.adminNotu = req.body.not || '';
+  res.json({ ok: true });
+});
+
+// Manuel soru üret (admin)
+app.get('/api/anket/uret', async (req, res) => {
+  res.json({ mesaj: 'Üretiliyor...' });
+  const soru = await anketSorusuUret();
+  if(soru) {
+    const anket = {
+      id: 'anket_' + Date.now(),
+      soru: soru.soru, konu: soru.konu, aciklama: soru.aciklama || '',
+      durum: ANKET_DURUM.TASLAK,
+      olusturmaTarihi: new Date().toISOString(),
+      yayinTarihi: null, tweetId: null,
+      oylar: { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 },
+      adminNotu: ''
+    };
+    anketler.push(anket);
+    console.log('Manuel anket üretildi:', anket.soru.substring(0, 50));
+  }
+});
+
+
 // ============ HABER BAŞINA DUYGU SKORU ============
 
 const pozitifAgirlik = {
