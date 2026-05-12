@@ -352,23 +352,41 @@ let anketler = [];
 let anketOylar = {};
 const ANKET_DURUM = { TASLAK: 'taslak', ONAYLANDI: 'onaylandi', REDDEDILDI: 'reddedildi', YAYINDA: 'yayinda', TAMAMLANDI: 'tamamlandi' };
 async function anketSorusuUret() {
-  if(!anthropic) return null;
+  if (!anthropic) { console.log('[anket] Claude API kapalı (CLAUDE_API_KEY eksik)'); return null; }
   try {
-    const gundem = haberler.slice(0, 30).map(h => h.title).join('\n');
+    const gundem = haberler.slice(0, 20).map(h => h.title).filter(Boolean).join('\n');
+    // Haberler henüz yüklenmediyse varsayılan gündem kullan
+    const gundemMetni = gundem.length > 10
+      ? gundem.substring(0, 500)
+      : 'Dolar/TL kuru, altın fiyatları, Bitcoin, BIST100, Merkez Bankası faiz kararı, enflasyon';
+
     const response = await anthropic.messages.create({
       model: MODEL_HAIKU,
-      max_tokens: 300,
+      max_tokens: 350,
       messages: [{
         role: 'user',
-        content: `Finans anketi üret. SADECE JSON.
-Gündem: ${gundem.substring(0, 600)}
-Konu altın/BTC/TL-USD/emtia/faiz. Tarafsız, akademik Türkçe.
-{"soru":"soru metni","konu":"altin/btc/usd/eur/emtia/faiz","aciklama":"1 cümle"}`
+        content: `Türk finans haberleri için bir anket sorusu üret.
+
+Güncel haberler / gündem:
+${gundemMetni}
+
+Kurallar:
+- Soru altın, BTC, dolar/TL, faiz veya emtia hakkında olsun
+- Akademik, tarafsız Türkçe kullan
+- Seçenekler sabit: Katılıyorum / Katılmıyorum / Kararsızım
+
+Şu JSON formatında yanıt ver (başka hiçbir şey yazma):
+{"soru":"...","konu":"altin","aciklama":"..."}`
       }]
     });
-    return extractJSON(response.content[0].text.trim());
+
+    const raw = response.content[0]?.text?.trim() || '';
+    console.log('[anket] Ham yanıt:', raw.substring(0, 120));
+    const parsed = extractJSON(raw);
+    if (!parsed?.soru) throw new Error('soru alanı eksik');
+    return parsed;
   } catch(e) {
-    console.log('Anket soru üretim hatası:', e.message);
+    console.error('[anket] Üretim hatası:', e.message);
     return null;
   }
 }
@@ -523,7 +541,10 @@ app.post('/api/anket/:id/reddet', (req, res) => {
 app.get('/api/anket/uret', async (req, res) => {
   try {
     const soru = await anketSorusuUret();
-    if (!soru || !soru.soru) return res.status(500).json({ error: 'Anket üretilemedi. AI yanıt vermedi.' });
+    if (!soru || !soru.soru) {
+      const neden = !anthropic ? 'CLAUDE_API_KEY tanımlı değil' : 'AI geçerli JSON döndürmedi — Railway loglarını kontrol et';
+      return res.status(500).json({ error: neden });
+    }
     const anket = {
       id: 'anket_' + Date.now(),
       soru: soru.soru, konu: soru.konu, aciklama: soru.aciklama || '',
