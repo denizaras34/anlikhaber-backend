@@ -7,27 +7,20 @@ const { TwitterApi } = require('twitter-api-v2');
 const Parser = require('rss-parser');
 const slugify = require('slugify');
 const Anthropic = require('@anthropic-ai/sdk');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 // Telegram Bot
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_KANAL = process.env.TELEGRAM_KANAL; // @anlikhaber veya -100xxxxxxx
-const TELEGRAM_GRUP = process.env.TELEGRAM_GRUP;   // grup ID
-
+const TELEGRAM_KANAL = process.env.TELEGRAM_KANAL;
+const TELEGRAM_GRUP = process.env.TELEGRAM_GRUP;
 let telegramRateLimit = 0;
-
 async function telegramGonder(chatId, mesaj) {
   if(!TELEGRAM_TOKEN || !chatId) return;
-  
-  // Rate limit kontrolü
   const now = Date.now();
   if(now < telegramRateLimit) {
     console.log('Telegram rate limit - bekleniyor...');
     return;
   }
-
   try {
     const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
     const r = await fetch('https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage', {
@@ -53,15 +46,11 @@ async function telegramGonder(chatId, mesaj) {
     console.log('Telegram hata:', e.message);
   }
 }
-
 app.use(cors({ origin: '*' }));
 app.use(express.json());
-
 let haberler = [];
 let postedUrls = new Set();
 const goruntulenmeSayaci = {};
-
-// AI Şeffaflık Sayaçları
 const seffaflikStats = {
   haftalikTaranan: 0,
   haftalikEklenen: 0,
@@ -70,25 +59,21 @@ const seffaflikStats = {
   toplamElenen: 0,
   haftaBaslangic: new Date(),
 };
-
 const twitter = new TwitterApi({
   appKey:       process.env.X_API_KEY,
   appSecret:    process.env.X_API_SECRET,
   accessToken:  process.env.X_ACCESS_TOKEN,
   accessSecret: process.env.X_ACCESS_SECRET,
 });
-
 let anthropic = null;
 if (process.env.CLAUDE_API_KEY) {
   anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
   console.log('Claude AI aktif');
 }
-
 const rssParser = new Parser({
   timeout: 15000,
   headers: { 'User-Agent': 'AnlikHaber/1.0 (+https://anlikhaber.com)' }
 });
-
 const RSS_FEEDS = [
   { url: 'https://tr.investing.com/rss/news.rss',    cat: 'finans',  emoji: '📊', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
   { url: 'https://tr.investing.com/rss/news_1.rss',  cat: 'doviz',   emoji: '💱', kaynak: 'Investing.com TR', lang: 'tr', checkTr: true },
@@ -100,7 +85,6 @@ const RSS_FEEDS = [
   { url: 'https://www.ntv.com.tr/ekonomi.rss',       cat: 'ekonomi', emoji: '🏛', kaynak: 'NTV',              lang: 'tr' },
   { url: 'https://cointelegraph.com/rss',            cat: 'kripto',  emoji: '₿',  kaynak: 'CoinTelegraph',    lang: 'en' },
 ];
-
 const CAT_TAGS = {
   finans:  ['#finans', '#yatirim'],
   doviz:   ['#dolar', '#kur'],
@@ -110,10 +94,7 @@ const CAT_TAGS = {
   kripto:  ['#bitcoin', '#kripto'],
   piyasa:  ['#piyasa', '#borsa'],
 };
-
 const STATIC_TRENDS = ['#BIST100', '#dolar', '#altin', '#faiz', '#kripto'];
-
-// Manipülatif/clickbait haber tespiti
 function isManipulative(title) {
   if(!title) return false;
   const manipPatterns = [
@@ -125,8 +106,6 @@ function isManipulative(title) {
   ];
   return manipPatterns.some(p => p.test(title));
 }
-
-// Önemli haber mi? (Analitik thread için)
 function isOnemliHaber(title, cat) {
   const onemliKeywords = [
     /faiz/i, /merkez bankası/i, /fed/i, /enflasyon/i,
@@ -135,62 +114,45 @@ function isOnemliHaber(title, cat) {
   ];
   return onemliKeywords.some(p => p.test(title));
 }
-
 function isTurkish(text) {
   if(!text) return false;
-  
-  // Arapça, Farsça, İbranice, Çince, Japonca, Korece — kesinlikle reddet
   const yabanciKarakteler = /[؀-ۿݐ-ݿ֐-׿一-鿿぀-ヿ가-힯]/;
   if(yabanciKarakteler.test(text)) return false;
-  
-  // Türkçe karakter varsa kabul et
   const trChars = /[çğıöşüÇĞİÖŞÜ]/;
   if(trChars.test(text)) return true;
-  
-  // İngilizce kelimeler varsa İngilizce — sadece EN kaynaklı haberler için
   const enWords = /(the |and |for |that |this |with |from |have |been |will |said |says |were |they |their |which |would |could |about |after |before |during |market|stock|shares|trading|investors|percent|billion|million)/i;
   if(enWords.test(text)) return false;
-  
   return true;
 }
-
 function createSlug(title) {
   return slugify(title, { lower: true, strict: true, trim: true }).substring(0, 80);
 }
-
 async function generateTurkishContent(haber) {
   if (!anthropic) return { title: haber.title, content: haber.description || '' };
   try {
     const bugun = new Date().toLocaleDateString('tr-TR', {day:'numeric', month:'long', year:'numeric'});
-    
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 800,
       messages: [{
         role: 'user',
         content: `Sen AnlıkHaber için çalışan bir Türk finans haber editörüsün. Aşağıdaki haberi Google Discover ve SEO için optimize et.
-
 Bugünün tarihi: ${bugun}
 Orijinal başlık: ${haber.title.substring(0, 150)}
 Açıklama: ${(haber.description || '').substring(0, 300)}
 Kaynak: ${haber.kaynak}
 Kategori: ${haber.cat || 'finans'}
-
 GÖREV 1 - BAŞLIK: Google Discover için merak uyandıran ama tıklama tuzağı olmayan başlık yaz.
 Örnekler: "Borsa İstanbul'da Bilanço Şoku mu, Şöleni mi?", "Dolar 45 TL'yi Aşar mı? İşte Kritik Eşik"
 Başlığa bugünün tarihini ekle.
-
 GÖREV 2 - GİRİŞ PARAGRAFI: "Claude AI analizimize göre..." diye başla, haberin can alıcı verisini ver, merak uyandır.
 2-3 cümle, meta description olarak kullanılacak.
-
 GÖREV 3 - GÖRSEL PROMPT: Siyah ve altın sarısı renk paleti, fütüristik, dijital tema. Haberin konusunu görselleştir.
 Örnek: "Futuristic stock market trading floor, golden glowing holographic charts, black and gold palette, 16:9, cinematic"
-
 SADECE JSON döndür:
 {"title":"başlık","content":"içerik 3-4 cümle","metaDesc":"giriş paragrafı 150 karakter","imagePrompt":"görsel prompt İngilizce"}`
       }]
     });
-
     const text = response.content[0].text.trim();
     const match = text.match(/\{[\s\S]*?\}/);
     if (!match) throw new Error('JSON bulunamadi');
@@ -206,35 +168,26 @@ SADECE JSON döndür:
     return { title: haber.title, content: haber.description || '', metaDesc: '', imagePrompt: '' };
   }
 }
-
 async function fetchAndSaveNews() {
   console.log('RSS taramasi baslıyor...');
   let yeni = 0;
-
   for (const feed of RSS_FEEDS) {
     try {
       const feedData = await rssParser.parseURL(feed.url);
       const items = feedData.items.slice(0, 5);
-
       for (const item of items) {
         const orijinalUrl = item.link || item.url || '';
         const title = (item.title || '').trim();
         if (!title || !orijinalUrl) continue;
         if (haberler.find(h => h.orijinalUrl === orijinalUrl)) continue;
-
-        if (feed.checkTr && !isTurkish(title)) {
-          continue;
-        }
-
+        if (feed.checkTr && !isTurkish(title)) continue;
         const slug = createSlug(title);
         const bizimUrl = `https://anlikhaber.com/haber/${slug}`;
-
         let turkishTitle = title;
         let turkishContent = item.contentSnippet || item.content || item.summary || '';
         let isTranslated = false;
         let metaDesc = '';
         let imagePrompt = '';
-
         if (feed.lang === 'en' && anthropic) {
           try {
             const aiContent = await generateTurkishContent({ title, description: turkishContent, kaynak: feed.kaynak, cat: feed.cat });
@@ -253,7 +206,6 @@ async function fetchAndSaveNews() {
             const aiContent = await generateTurkishContent({ title, description: turkishContent, kaynak: feed.kaynak, cat: feed.cat });
             turkishTitle = aiContent.title || title;
             metaDesc = aiContent.metaDesc || turkishContent.substring(0, 160);
-            // Image prompt sadece aktifse sakla
             imagePrompt = process.env.IMAGE_PROMPT_ACTIVE === 'true' ? (aiContent.imagePrompt || '') : '';
             await sleep(1000);
           } catch(e) {
@@ -265,13 +217,11 @@ async function fetchAndSaveNews() {
         } else {
           metaDesc = turkishContent.substring(0, 160);
         }
-
         let resim = null;
         const isValidImg = (url) => url && url.startsWith('http') && !url.includes('base64') && !url.endsWith('=.jpg') && !url.includes('=.jpg?');
         if (item.enclosure && item.enclosure.url && isValidImg(item.enclosure.url)) resim = item.enclosure.url;
         else if (item['media:content'] && item['media:content']['$'] && isValidImg(item['media:content']['$'].url)) resim = item['media:content']['$'].url;
         else if (item.image && isValidImg(item.image)) resim = item.image;
-
         let aiNotu = '';
         if (feed.lang === 'tr') {
           aiNotu = `Bu icerik ${feed.kaynak} kaynagindan derlenmistir.`;
@@ -280,7 +230,6 @@ async function fetchAndSaveNews() {
         } else {
           aiNotu = `Bu icerik ${feed.kaynak} kaynagindan alinmistir. Detaylar icin kaynagi ziyaret edin.`;
         }
-
         const haber = {
           id: Date.now() + Math.random(),
           slug, title: turkishTitle, originalTitle: title,
@@ -296,15 +245,10 @@ async function fetchAndSaveNews() {
           tarih: item.pubDate ? new Date(item.pubDate) : new Date(),
           tweetAtildi: false,
         };
-
-        // Her habere duygu skoru ekle
         haber.sentiment = haberSentimentSkoru(haber);
-        
         haberler.unshift(haber);
         yeni++;
         seffaflikStats.haftalikEklenen++;
-
-        // Telegram kanala gönder - max 3 haber per fetch, 5sn arayla
         if(TELEGRAM_KANAL && yeni <= 3) {
           const tgMesaj = [
             haber.emoji + ' <b>' + haber.title + '</b>',
@@ -327,8 +271,6 @@ async function fetchAndSaveNews() {
   console.log('RSS bitti. ' + yeni + ' yeni haber.');
   if(yeni > 0) setTimeout(sentimentAnalizi, 1000);
 }
-
-// Önemli haberler için analitik thread oluştur
 async function generateAnalitikThread(haber) {
   if (!anthropic) return;
   try {
@@ -338,9 +280,7 @@ async function generateAnalitikThread(haber) {
       messages: [{
         role: 'user',
         content: `Türk finans analisti olarak şu haberi analiz et ve X (Twitter) için kısa bir thread yaz.
-
 Haber: ${haber.title}
-
 Şunu yap: "Bu verinin/kararın/haberin 3 olası etkisi:" formatında 3 madde yaz.
 Sadece JSON döndür: {"thread": "🧵 Başlık\n\n1️⃣ ...\n2️⃣ ...\n3️⃣ ...\n\n#finans #anlikhaber"}`
       }]
@@ -354,11 +294,8 @@ Sadece JSON döndür: {"thread": "🧵 Başlık\n\n1️⃣ ...\n2️⃣ ...\n3�
         console.log('Analitik thread oluşturuldu:', haber.title.substring(0, 40));
       }
     }
-  } catch(e) {
-    // Sessizce geç
-  }
+  } catch(e) {}
 }
-
 async function tweetHaber(haber) {
   if (haber.tweetAtildi || postedUrls.has(haber.orijinalUrl)) return;
   try {
@@ -372,7 +309,6 @@ async function tweetHaber(haber) {
       ``,
       `${catTags} #anlikhaber`,
     ].join('\n').substring(0, 280);
-
     await twitter.v2.tweet(tweetText);
     haber.tweetAtildi = true;
     postedUrls.add(haber.orijinalUrl);
@@ -386,9 +322,7 @@ async function tweetHaber(haber) {
     }
   }
 }
-
 // ============ SENTIMENT ANALİZİ ============
-
 let sentimentCache = {
   skor: 50,
   etiket: 'Nötr / Belirsiz',
@@ -398,18 +332,10 @@ let sentimentCache = {
   toplamHaber: 0,
   sonGuncelleme: new Date().toISOString(),
 };
-
-
 // ============ ANKET SİSTEMİ ============
-
-// In-memory DB (Railway restart'ta sıfırlanır — ileride MongoDB eklenebilir)
-let anketler = []; // Tüm sorular
-let anketOylar = {}; // { anketId: { katiliyorum: N, katilmiyorum: N, kararsizim: N } }
-
-// Anket durumları
+let anketler = [];
+let anketOylar = {};
 const ANKET_DURUM = { TASLAK: 'taslak', ONAYLANDI: 'onaylandi', REDDEDILDI: 'reddedildi', YAYINDA: 'yayinda', TAMAMLANDI: 'tamamlandi' };
-
-// Anket sorusu oluştur
 async function anketSorusuUret() {
   if(!anthropic) return null;
   try {
@@ -420,17 +346,14 @@ async function anketSorusuUret() {
       messages: [{
         role: 'user',
         content: `Sen bir finansal analist ve editörsün. Aşağıdaki güncel finans haberlerinden yola çıkarak 1 adet anket sorusu üret.
-
 Gündem:
 ${gundem.substring(0, 1000)}
-
 KURALLAR:
 1. Soru altın, BTC, TL/USD/EUR veya emtia ile ilgili olsun
 2. Soru kusursuz akademik Türkçeyle yazılmış olsun
 3. Mantık hatası olmasın — soru net, tarafsız ve manipülasyon içermemeli
 4. Soru bir öngörü veya değerlendirme istesin (örn: "... beklentiniz nedir?", "... düşünüyor musunuz?")
 5. Seçenekler sabit: Katılıyorum / Katılmıyorum / Kararsızım
-
 Sadece JSON döndür:
 {"soru": "Soru metni burada", "konu": "altin/btc/usd/eur/emtia/faiz", "aciklama": "Sorunun neden önemli olduğunu 1 cümle ile açıkla"}`
       }]
@@ -438,20 +361,16 @@ Sadece JSON döndür:
     const text = response.content[0].text.trim();
     const match = text.match(/\{[\s\S]*?\}/);
     if(!match) return null;
-    const parsed = JSON.parse(match[0]);
-    return parsed;
+    return JSON.parse(match[0]);
   } catch(e) {
     console.log('Anket soru üretim hatası:', e.message);
     return null;
   }
 }
-
-// Haftalık 5 soru üret — Her Pazar 18:00 TR (15:00 UTC)
 cron.schedule('0 15 * * 0', async () => {
   console.log('Haftalık anket soruları üretiliyor...');
   const sorular = [];
   const konular = ['altin', 'btc', 'usd', 'eur', 'emtia'];
-  
   for(const konu of konular) {
     await sleep(2000);
     const soru = await anketSorusuUret();
@@ -473,8 +392,6 @@ cron.schedule('0 15 * * 0', async () => {
       console.log('Anket taslak:', anket.soru.substring(0, 50));
     }
   }
-  
-  // Admin'e bildirim (Telegram)
   if(TELEGRAM_KANAL && sorular.length > 0) {
     const mesaj = [
       '📋 <b>Yeni Anket Soruları Admin Onayı Bekliyor</b>',
@@ -486,42 +403,33 @@ cron.schedule('0 15 * * 0', async () => {
     ].join('\n');
     await telegramGonder(TELEGRAM_KANAL, mesaj);
   }
-  
   console.log(`${sorular.length} anket sorusu oluşturuldu, admin onayı bekliyor.`);
 });
-
-// Anket yayınlama — Her gün 09:00 TR (06:00 UTC) onaylananları yayınla
 cron.schedule('0 6 * * *', async () => {
-  const bugun = new Date().getDay(); // 0=Pazar, 1=Pzt, 3=Çrş, 5=Cum
-  const gunSirasi = { 1: 0, 3: 1, 5: 2, 0: 3, 2: 4 }; // Hangi gün hangi soru
+  const bugun = new Date().getDay();
+  const gunSirasi = { 1: 0, 3: 1, 5: 2, 0: 3, 2: 4 };
   const siraNo = gunSirasi[bugun];
   if(siraNo === undefined) return;
-
-  // Onaylı ama henüz yayınlanmamış soruları sıraya göre al
   const onaylilar = anketler
     .filter(a => a.durum === ANKET_DURUM.ONAYLANDI)
     .sort((a, b) => new Date(a.olusturmaTarihi) - new Date(b.olusturmaTarihi));
-  
   if(onaylilar.length === 0) return;
-  const anket = onaylilar[0]; // En eski onaylıyı yayınla
-
-  // X'e tweet at
+  const anket = onaylilar[0];
   if(process.env.X_API_KEY) {
     try {
       const konuEmoji = { altin: '🥇', btc: '₿', usd: '💵', eur: '💶', emtia: '🛢', faiz: '📈' };
       const emoji = konuEmoji[anket.konu] || '📊';
       const tweetText = [
-        `${emoji} <b>AnlıkHaber Haftalık Anket</b>`,
+        `${emoji} AnlıkHaber Haftalık Anket`,
         ``,
         `📌 ${anket.soru}`,
         ``,
         `1️⃣ Katılıyorum`,
-        `2️⃣ Katılmıyorum`,  
+        `2️⃣ Katılmıyorum`,
         `3️⃣ Kararsızım`,
         ``,
         `#${anket.konu} #anket #finans #anlikhaber`
       ].join('\n').substring(0, 280);
-
       const tweet = await twitter.v2.tweet(tweetText);
       anket.tweetId = tweet.data.id;
       anket.durum = ANKET_DURUM.YAYINDA;
@@ -532,9 +440,6 @@ cron.schedule('0 6 * * *', async () => {
     }
   }
 });
-
-// Sonuç paylaşımı — Yayına giren anketin 72 saat sonrasında sonuç at
-// Her saat kontrol et
 cron.schedule('0 * * * *', async () => {
   const simdi = new Date();
   const yayindakiler = anketler.filter(a => {
@@ -542,25 +447,15 @@ cron.schedule('0 * * * *', async () => {
     const fark = (simdi - new Date(a.yayinTarihi)) / (1000 * 60 * 60);
     return fark >= 72;
   });
-
   for(const anket of yayindakiler) {
     const oylar = anketOylar[anket.id] || { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 };
     const toplam = oylar.katiliyorum + oylar.katilmiyorum + oylar.kararsizim;
-    
-    if(toplam === 0) {
-      // Oy yoksa sadece arşivle
-      anket.durum = ANKET_DURUM.TAMAMLANDI;
-      continue;
-    }
-
+    if(toplam === 0) { anket.durum = ANKET_DURUM.TAMAMLANDI; continue; }
     const pKati = Math.round(oylar.katiliyorum / toplam * 100);
     const pKatil = Math.round(oylar.katilmiyorum / toplam * 100);
     const pKarar = 100 - pKati - pKatil;
-
-    // Sonuç tweet — ham veri, değiştirilmez
     const konuEmoji = { altin: '🥇', btc: '₿', usd: '💵', eur: '💶', emtia: '🛢', faiz: '📈' };
     const emoji = konuEmoji[anket.konu] || '📊';
-    
     const tweetText = [
       `${emoji} AnlıkHaber Anket Sonucu`,
       ``,
@@ -574,36 +469,22 @@ cron.schedule('0 * * * *', async () => {
       ``,
       `#${anket.konu} #anketsonucu #finans #anlikhaber`
     ].join('\n').substring(0, 280);
-
     try {
       await twitter.v2.tweet(tweetText);
       anket.durum = ANKET_DURUM.TAMAMLANDI;
       anket.sonuclar = { pKati, pKatil, pKarar, toplam };
       console.log('Anket sonuç tweeti atıldı:', anket.soru.substring(0, 50));
-      
-      // Telegram'a da gönder
-      if(TELEGRAM_KANAL) {
-        await telegramGonder(TELEGRAM_KANAL, tweetText);
-      }
+      if(TELEGRAM_KANAL) await telegramGonder(TELEGRAM_KANAL, tweetText);
     } catch(e) {
       console.log('Sonuç tweet hatası:', e.message);
     }
-    
     await sleep(3000);
   }
 });
-
-// ============ ANKET API ENDPOİNTLERİ ============
-
-// Tüm anketler (admin)
+// ============ ANKET API ============
 app.get('/api/anketler', (req, res) => {
-  res.json(anketler.map(a => ({
-    ...a,
-    oylar: anketOylar[a.id] || { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 }
-  })));
+  res.json(anketler.map(a => ({ ...a, oylar: anketOylar[a.id] || { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 } })));
 });
-
-// Aktif anket (site)
 app.get('/api/anket/aktif', (req, res) => {
   const aktif = anketler.find(a => a.durum === ANKET_DURUM.YAYINDA);
   if(!aktif) return res.json(null);
@@ -611,30 +492,22 @@ app.get('/api/anket/aktif', (req, res) => {
   const toplam = oylar.katiliyorum + oylar.katilmiyorum + oylar.kararsizim;
   res.json({ ...aktif, oylar, toplam });
 });
-
-// Oy ver
 app.post('/api/anket/:id/oy', (req, res) => {
-  const { oy } = req.body; // 'katiliyorum' | 'katilmiyorum' | 'kararsizim'
+  const { oy } = req.body;
   const anket = anketler.find(a => a.id === req.params.id);
   if(!anket || anket.durum !== ANKET_DURUM.YAYINDA) return res.status(400).json({ error: 'Anket aktif değil' });
   if(!['katiliyorum','katilmiyorum','kararsizim'].includes(oy)) return res.status(400).json({ error: 'Geçersiz oy' });
-  
   if(!anketOylar[anket.id]) anketOylar[anket.id] = { katiliyorum: 0, katilmiyorum: 0, kararsizim: 0 };
   anketOylar[anket.id][oy]++;
   res.json({ ok: true, oylar: anketOylar[anket.id] });
 });
-
-// Admin: Onayla
 app.post('/api/anket/:id/onayla', (req, res) => {
   const anket = anketler.find(a => a.id === req.params.id);
   if(!anket) return res.status(404).json({ error: 'Bulunamadı' });
   anket.durum = ANKET_DURUM.ONAYLANDI;
   anket.adminNotu = req.body.not || '';
-  console.log('Anket onaylandı:', anket.soru.substring(0, 50));
   res.json({ ok: true });
 });
-
-// Admin: Reddet
 app.post('/api/anket/:id/reddet', (req, res) => {
   const anket = anketler.find(a => a.id === req.params.id);
   if(!anket) return res.status(404).json({ error: 'Bulunamadı' });
@@ -642,8 +515,6 @@ app.post('/api/anket/:id/reddet', (req, res) => {
   anket.adminNotu = req.body.not || '';
   res.json({ ok: true });
 });
-
-// Manuel soru üret (admin)
 app.get('/api/anket/uret', async (req, res) => {
   res.json({ mesaj: 'Üretiliyor...' });
   const soru = await anketSorusuUret();
@@ -661,35 +532,19 @@ app.get('/api/anket/uret', async (req, res) => {
     console.log('Manuel anket üretildi:', anket.soru.substring(0, 50));
   }
 });
-
-
-
-// ============ DERİN ANALİZ SİSTEMİ ============
-
-let derinAnalizler = []; // Son analizler cache
-
-// Önemli haberleri seç ve analiz et
+// ============ DERİN ANALİZ ============
+let derinAnalizler = [];
 async function derinAnalizUret() {
   if(!anthropic) return;
-  
-  // En önemli 3 haberi seç: yüksek/düşük sentiment + anahtar kelimeler
   const onemliHaberler = haberler
     .filter(h => h.sentiment && h.title)
-    .filter(h => {
-      const t = h.title.toLowerCase();
-      return /fed|tcmb|merkez banka|faiz|altin|bitcoin|btc|dolar|enflasyon|bist|borsa/i.test(t);
-    })
+    .filter(h => /fed|tcmb|merkez banka|faiz|altin|bitcoin|btc|dolar|enflasyon|bist|borsa/i.test(h.title.toLowerCase()))
     .sort((a, b) => Math.abs(b.sentiment.score - 50) - Math.abs(a.sentiment.score - 50))
     .slice(0, 3);
-
   if(onemliHaberler.length === 0) return;
-
   const yeniAnalizler = [];
-
   for(const haber of onemliHaberler) {
-    // Zaten analiz edilmişse atla
     if(derinAnalizler.find(a => a.haberSlug === haber.slug)) continue;
-
     try {
       await sleep(2000);
       const response = await anthropic.messages.create({
@@ -698,34 +553,25 @@ async function derinAnalizUret() {
         messages: [{
           role: 'user',
           content: `Sen AnlıkHaber için yazan kıdemli bir Türk finans analistisin.
-
 Haber başlığı: ${haber.title}
 Haber özeti: ${(haber.description || '').substring(0, 300)}
 Kategori: ${haber.cat}
 Duygu skoru: ${haber.sentiment.score}/100 (${haber.sentiment.label})
-
 Bu haberi derinlemesine analiz et. SADECE JSON döndür:
-
 {
   "ozet": "Haberin özü 2 cümlede. Net, akademik Türkçe.",
-  "etkiler": [
-    "Altın/TL/BTC/borsa üzerindeki 1. olası etki",
-    "2. olası etki", 
-    "3. olası etki"
-  ],
-  "riskler": "Bu gelişmenin yaratabileceği riskler 1 cümlede",
-  "firsatlar": "Bu gelişmenin sunduğu fırsatlar 1 cümlede",
+  "etkiler": ["1. olası etki","2. olası etki","3. olası etki"],
+  "riskler": "Riskler 1 cümlede",
+  "firsatlar": "Fırsatlar 1 cümlede",
   "xThread": "X için thread başlangıcı (max 240 karakter, emoji ile)",
   "uyari": "Bu analiz yatırım tavsiyesi değildir."
 }`
         }]
       });
-
       const text = response.content[0].text.trim();
       const match = text.match(/\{[\s\S]*\}/);
       if(!match) continue;
       const analiz = JSON.parse(match[0]);
-
       const derinAnaliz = {
         id: 'analiz_' + Date.now(),
         haberSlug: haber.slug,
@@ -736,28 +582,17 @@ Bu haberi derinlemesine analiz et. SADECE JSON döndür:
         tarih: new Date().toISOString(),
         ...analiz
       };
-
       derinAnalizler.unshift(derinAnaliz);
       yeniAnalizler.push(derinAnaliz);
-
-      // Max 20 analiz tut
       if(derinAnalizler.length > 20) derinAnalizler = derinAnalizler.slice(0, 20);
-
       console.log('Derin analiz üretildi:', haber.title.substring(0, 50));
-
-      // X'e thread at
       if(analiz.xThread && process.env.X_API_KEY) {
         try {
           await sleep(3000);
           const tweetText = (analiz.xThread + '\n\n🔗 ' + haber.bizimUrl + '\n#anlikhaber #analiz').substring(0, 280);
           await twitter.v2.tweet(tweetText);
-          console.log('Analiz tweeti atıldı!');
-        } catch(e) {
-          console.log('Analiz tweet hatası:', e.message);
-        }
+        } catch(e) { console.log('Analiz tweet hatası:', e.message); }
       }
-
-      // Telegram'a gönder
       if(TELEGRAM_KANAL && analiz.ozet) {
         const konuEmoji = {finans:'📊',borsa:'📈',kripto:'₿',ekonomi:'🏛',doviz:'💱',emtia:'🥇'};
         const emoji = konuEmoji[haber.cat] || '📊';
@@ -777,140 +612,72 @@ Bu haberi derinlemesine analiz et. SADECE JSON döndür:
         ].join('\n');
         await telegramGonder(TELEGRAM_KANAL, tgMesaj);
       }
-
-    } catch(e) {
-      console.log('Derin analiz hatası:', e.message);
-    }
+    } catch(e) { console.log('Derin analiz hatası:', e.message); }
   }
-
   return yeniAnalizler;
 }
-
-// Her 4 saatte bir derin analiz üret
 cron.schedule('0 */4 * * *', derinAnalizUret);
-
-// Derin analiz endpoint
-app.get('/api/analizler', (req, res) => {
-  res.json(derinAnalizler);
-});
-
+app.get('/api/analizler', (req, res) => res.json(derinAnalizler));
 app.get('/api/analiz/:slug', (req, res) => {
   const analiz = derinAnalizler.find(a => a.haberSlug === req.params.slug);
   if(!analiz) return res.status(404).json(null);
   res.json(analiz);
 });
-
-// Manuel analiz tetikle (admin)
 app.get('/api/analiz-uret', async (req, res) => {
   res.json({ mesaj: 'Analiz üretiliyor...' });
   derinAnalizUret();
 });
-
-
-// ============ HABER BAŞINA DUYGU SKORU ============
-
+// ============ SENTIMENT ============
 const pozitifAgirlik = {
-  // Güçlü pozitif (+3)
   'kâr artışı': 3, 'beklenti üstü': 3, 'ihracat rekoru': 3, 'rekor kâr': 3,
   'stratejik iş birliği': 3, 'yabancı ilgisi': 3, 'büyüme rekoru': 3,
-  // Orta pozitif (+2)
   'yükseldi': 2, 'arttı': 2, 'rekor': 2, 'güçlü': 2, 'toparlandı': 2,
   'pozitif': 2, 'büyüdü': 2, 'kârlı': 2, 'başarı': 2, 'rally': 2,
   'aştı': 2, 'üzerinde': 2, 'tahmin üstü': 2, 'ivme': 2,
-  // Hafif pozitif (+1)
   'istikrar': 1, 'güven': 1, 'artış': 1, 'fırsat': 1, 'talep': 1,
   'yatırım': 1, 'ihracat': 1, 'büyüme': 1, 'kâr': 1, 'temettü': 1,
 };
-
 const negatifAgirlik = {
-  // Güçlü negatif (-3)
   'maliyet artışı': -3, 'arz daralması': -3, 'jeopolitik risk': -3,
   'enflasyon baskısı': -3, 'düşüş trendi': -3, 'iflas': -3, 'batık': -3,
-  // Orta negatif (-2)
   'düştü': -2, 'geriledi': -2, 'kayıp': -2, 'risk': -2, 'kriz': -2,
   'panik': -2, 'zayıf': -2, 'endişe': -2, 'baskı': -2, 'daraldı': -2,
   'zararda': -2, 'tahmin altı': -2, 'sert düşüş': -2,
-  // Hafif negatif (-1)
   'belirsiz': -1, 'yavaşladı': -1, 'azaldı': -1, 'olumsuz': -1,
   'sorun': -1, 'güçlük': -1, 'faiz artışı': -1, 'enflasyon': -1,
 };
-
-// Manipülatif kelimeler — analiz dışı bırak
-const manipulatif = [
-  'şok', 'bomba', 'inanılmaz', 'garantili', 'kesin kazan', 'milyoner',
-  'sır', 'gizli', 'acil', 'son fırsat', 'herkese', 'flaş'
-];
-
+const manipulatif = ['şok', 'bomba', 'inanılmaz', 'garantili', 'kesin kazan', 'milyoner', 'sır', 'gizli', 'acil', 'son fırsat', 'herkese', 'flaş'];
 function haberSentimentSkoru(haber) {
   const metin = ((haber.title || '') + ' ' + (haber.description || '')).toLowerCase();
-  
-  // Manipülatif mi? — güvenilmez, nötr döndür
   for(const m of manipulatif) {
     if(metin.includes(m)) return { score: 50, label: 'Nötr', guvenilir: false };
   }
-
-  let puan = 0;
-  let eslesme = 0;
-
-  // Pozitif kelimeler
+  let puan = 0, eslesme = 0;
   for(const [kelime, agirlik] of Object.entries(pozitifAgirlik)) {
     if(metin.includes(kelime)) { puan += agirlik; eslesme++; }
   }
-
-  // Negatif kelimeler
   for(const [kelime, agirlik] of Object.entries(negatifAgirlik)) {
     if(metin.includes(kelime)) { puan += agirlik; eslesme++; }
   }
-
-  // Baz puan 50, normalize et + polarize
   let normalPuan = Math.max(5, Math.min(95, 50 + (puan * 6)));
-  
-  // Nötrei azalt — 42-58 arasındaysa yönüne göre it
   if(normalPuan > 50 && normalPuan < 60) normalPuan = Math.min(92, normalPuan + 8);
   else if(normalPuan < 50 && normalPuan > 40) normalPuan = Math.max(8, normalPuan - 8);
   else if(normalPuan === 50) normalPuan = puan >= 0 ? 55 : 45;
-  
   normalPuan = Math.round(normalPuan);
-
   let label;
   if(normalPuan <= 20) label = 'Panik';
   else if(normalPuan <= 38) label = 'Negatif';
   else if(normalPuan <= 62) label = 'Nötr';
   else if(normalPuan <= 80) label = 'Pozitif';
   else label = 'Coşkulu';
-
-  return { 
-    score: normalPuan, 
-    label, 
-    guvenilir: eslesme > 0,
-    uyari: 'Bu skor, yapay zeka tarafından haber metni üzerinde yapılan istatistiksel bir dil analizidir. Yatırım tavsiyesi içermez; sadece haberin tonunu raporlar.'
-  };
+  return { score: normalPuan, label, guvenilir: eslesme > 0, uyari: 'Bu skor istatistiksel dil analizidir. Yatırım tavsiyesi içermez.' };
 }
-
 function sentimentAnalizi() {
   const bugun = new Date();
   bugun.setHours(bugun.getHours() - 24);
   const sonHaberler = haberler.filter(h => new Date(h.tarih) > bugun);
-
   if (sonHaberler.length === 0) return;
-
-  const pozitifKelimeler = [
-    'yüksel', 'arttı', 'rekor', 'büyüme', 'güçlü', 'rally', 'kazanç',
-    'toparlandı', 'pozitif', 'iyimser', 'artış', 'başarı', 'zirve',
-    'fırladı', 'atladı', 'coştu', 'talep', 'güven', 'istikrar', 'kâr',
-    'surge', 'gain', 'rise', 'rally', 'bull', 'recovery', 'strong'
-  ];
-
-  const negatifKelimeler = [
-    'düştü', 'geriledi', 'çöktü', 'kayıp', 'endişe', 'risk', 'kriz',
-    'panik', 'satış', 'zayıf', 'olumsuz', 'kaygı', 'belirsiz', 'tehlike',
-    'azaldı', 'daraldı', 'sert', 'çöküş', 'yavaşladı', 'baskı', 'zarar',
-    'crash', 'fall', 'drop', 'bear', 'fear', 'uncertainty', 'weak', 'loss'
-  ];
-
-  let pozitif = 0, negatif = 0, notr = 0;
-  let toplamSkor = 0;
-
+  let pozitif = 0, negatif = 0, notr = 0, toplamSkor = 0;
   sonHaberler.forEach(h => {
     const s = h.sentiment || haberSentimentSkoru(h);
     toplamSkor += s.score;
@@ -918,82 +685,42 @@ function sentimentAnalizi() {
     else if (s.score < 40) negatif++;
     else notr++;
   });
-
   const toplam = sonHaberler.length;
   let normalSkor = Math.round(toplamSkor / toplam);
-
-  // Polarizasyon — nötrden kaç, hangisine yakınsa oraya çek
-  // 45-55 arasındaysa ±8 puan ekle yönüne göre
-  // Ama max 85, min 15 — absürt seviyelere çıkma
-  if (normalSkor > 50) {
-    const uzaklik = normalSkor - 50;
-    normalSkor = Math.min(85, Math.round(50 + uzaklik * 1.6));
-  } else if (normalSkor < 50) {
-    const uzaklik = 50 - normalSkor;
-    normalSkor = Math.max(15, Math.round(50 - uzaklik * 1.6));
-  } else {
-    // Tam 50 ise pozitif/negatif sayısına bak
-    normalSkor = pozitif >= negatif ? 54 : 46;
-  }
-
+  if (normalSkor > 50) normalSkor = Math.min(85, Math.round(50 + (normalSkor - 50) * 1.6));
+  else if (normalSkor < 50) normalSkor = Math.max(15, Math.round(50 - (50 - normalSkor) * 1.6));
+  else normalSkor = pozitif >= negatif ? 54 : 46;
   let etiket;
   if (normalSkor <= 20) etiket = 'Aşırı Karamsar (Panik)';
   else if (normalSkor <= 40) etiket = 'Temkinli / Negatif';
   else if (normalSkor <= 60) etiket = 'Nötr / Belirsiz';
   else if (normalSkor <= 80) etiket = 'İyimser / Pozitif';
   else etiket = 'Aşırı Coşkulu (FOMO)';
-
-  sentimentCache = {
-    skor: normalSkor,
-    etiket,
-    pozitif,
-    negatif,
-    notr,
-    toplamHaber: toplam,
-    sonGuncelleme: new Date().toISOString(),
-    uyari: 'Bu analiz, yapay zeka tarafından haber metinleri üzerinde yapılan bir dil analizidir. Yatırım tavsiyesi içermez; piyasadaki genel haber akışının istatistiksel bir özetidir.'
-  };
-
+  sentimentCache = { skor: normalSkor, etiket, pozitif, negatif, notr, toplamHaber: toplam, sonGuncelleme: new Date().toISOString(), uyari: 'Bu analiz yatırım tavsiyesi içermez.' };
   console.log('Sentiment güncellendi:', etiket, '(' + normalSkor + ')');
 }
-
-// Her saat sentiment güncelle
 cron.schedule('0 * * * *', sentimentAnalizi);
-
 // ============ API ENDPOINTS ============
-
 app.get('/api/haberler', (req, res) => {
   const { cat, limit = 50 } = req.query;
   let data = cat && cat !== 'hepsi' ? haberler.filter(h => h.cat === cat) : haberler;
-  // Görüntülenme sayısını ekle
-  const dataWithViews = data.slice(0, parseInt(limit)).map(h => ({
-    ...h,
-    goruntulenmeSayisi: goruntulenmeSayaci[h.slug] || 0
-  }));
-  res.json(dataWithViews);
+  res.json(data.slice(0, parseInt(limit)).map(h => ({ ...h, goruntulenmeSayisi: goruntulenmeSayaci[h.slug] || 0 })));
 });
-
-// Görüntülenme say
 app.post('/api/goruntulendi/:slug', (req, res) => {
   const slug = req.params.slug;
   goruntulenmeSayaci[slug] = (goruntulenmeSayaci[slug] || 0) + 1;
   res.json({ ok: true, sayi: goruntulenmeSayaci[slug] });
 });
-
 app.get('/api/haber/:slug', (req, res) => {
   const haber = haberler.find(h => h.slug === req.params.slug);
   if (!haber) return res.status(404).json({ error: 'Bulunamadi' });
   res.json(haber);
 });
-
 app.get('/api/ilgili/:slug', (req, res) => {
   const haber = haberler.find(h => h.slug === req.params.slug);
   if (!haber) return res.status(404).json([]);
-  const ilgili = haberler.filter(h => h.slug !== req.params.slug && h.cat === haber.cat).slice(0, 4);
-  res.json(ilgili);
+  res.json(haberler.filter(h => h.slug !== req.params.slug && h.cat === haber.cat).slice(0, 4));
 });
-
-// AI Şeffaflık Raporu endpoint
 app.get('/api/seffaflik', (req, res) => {
   const gunSayisi = Math.max(1, Math.floor((Date.now() - new Date(seffaflikStats.haftaBaslangic)) / 86400000));
   res.json({
@@ -1002,28 +729,22 @@ app.get('/api/seffaflik', (req, res) => {
     haftalikElenen: seffaflikStats.haftalikElenen,
     toplamTaranan: seffaflikStats.toplamTaranan,
     toplamElenen: seffaflikStats.toplamElenen,
-    elenmeOrani: seffaflikStats.haftalikTaranan > 0 
-      ? Math.round((seffaflikStats.haftalikElenen / seffaflikStats.haftalikTaranan) * 100) 
-      : 0,
+    elenmeOrani: seffaflikStats.haftalikTaranan > 0 ? Math.round((seffaflikStats.haftalikElenen / seffaflikStats.haftalikTaranan) * 100) : 0,
     haftaBaslangic: seffaflikStats.haftaBaslangic,
     gunSayisi,
   });
 });
-
-app.get('/api/sentiment', (req, res) => {
-  res.json(sentimentCache);
+app.get('/api/sentiment', (req, res) => res.json(sentimentCache));
+app.get('/api/sentiment/:slug', (req, res) => {
+  const haber = haberler.find(h => h.slug === req.params.slug);
+  if(!haber) return res.status(404).json({ error: 'Bulunamadi' });
+  res.json(haber.sentiment || haberSentimentSkoru(haber));
 });
-
-// Tek haber sentiment skoru
-// Piyasa cache - her 5 dakikada bir güncelle
 let piyasaCache = {};
 let piyasaSonGuncelleme = 0;
-
 async function piyasaGuncelle() {
   const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
   const result = {};
-
-  // 1. Kripto - Binance (gerçek zamanlı, güvenilir)
   try {
     const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT","BNBUSDT"]');
     const data = await r.json();
@@ -1034,8 +755,6 @@ async function piyasaGuncelle() {
       if(d.symbol === 'ETHUSDT') { result.eth = Math.round(price); result.ethChg = chg; }
     });
   } catch(e) { console.log('Binance hata:', e.message); }
-
-  // 2. Döviz - ExchangeRate-API (saatlik güncelleme, ücretsiz)
   try {
     const r = await fetch('https://open.er-api.com/v6/latest/USD');
     const d = await r.json();
@@ -1045,7 +764,6 @@ async function piyasaGuncelle() {
       result.gbptry = (d.rates.TRY && d.rates.GBP) ? (d.rates.TRY / d.rates.GBP).toFixed(2) : null;
     }
   } catch(e) {
-    // ExchangeRate-API başarısız — Frankfurter fallback
     try {
       const r = await fetch('https://api.frankfurter.app/latest?from=USD&to=TRY,EUR,GBP');
       const d = await r.json();
@@ -1056,60 +774,28 @@ async function piyasaGuncelle() {
       }
     } catch(e2) {}
   }
-
-  // 3. Altın - MetalpriceAPI (ücretsiz tier, günde 100 istek)
   try {
     const r = await fetch('https://api.metals.live/v1/spot/gold');
     const d = await r.json();
     if(d && d[0] && d[0].gold) result.gold = Math.round(d[0].gold);
   } catch(e) {
-    // Fallback: GoldAPI.io ücretsiz tier
     try {
-      const r = await fetch('https://www.goldapi.io/api/XAU/USD', {
-        headers: { 'x-access-token': 'goldapi-free' }
-      });
+      const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
       const d = await r.json();
-      if(d.price) result.gold = Math.round(d.price);
-    } catch(e2) {
-      // Son fallback: Frankfurter XAU
-      try {
-        const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
-        const d = await r.json();
-        if(d.rates && d.rates.USD) result.gold = Math.round(1 / d.rates.USD);
-      } catch(e3) {}
-    }
+      if(d.rates && d.rates.USD) result.gold = Math.round(1 / d.rates.USD);
+    } catch(e2) {}
   }
-
-  // 4. Petrol - AlphaVantage ücretsiz (günde 25 istek)
-  // Şimdilik statik bırak, ileride eklenebilir
-  // result.petrol = null;
-
   result.guncelleme = new Date().toISOString();
   piyasaCache = result;
   piyasaSonGuncelleme = Date.now();
   console.log('Piyasa güncellendi:', JSON.stringify(result));
   return result;
 }
-
-// Her 5 dakikada bir güncelle
 cron.schedule('*/5 * * * *', piyasaGuncelle);
-
-// Piyasa verileri endpoint
 app.get('/api/piyasa', async (req, res) => {
-  // Cache 5 dakikadan eskiyse güncelle
-  if(Date.now() - piyasaSonGuncelleme > 5 * 60 * 1000 || !piyasaCache.btc) {
-    await piyasaGuncelle();
-  }
+  if(Date.now() - piyasaSonGuncelleme > 5 * 60 * 1000 || !piyasaCache.btc) await piyasaGuncelle();
   res.json(piyasaCache);
 });
-
-app.get('/api/sentiment/:slug', (req, res) => {
-  const haber = haberler.find(h => h.slug === req.params.slug);
-  if(!haber) return res.status(404).json({ error: 'Bulunamadi' });
-  const s = haber.sentiment || haberSentimentSkoru(haber);
-  res.json(s);
-});
-
 app.get('/api/stats', async (req, res) => {
   let abone = null;
   try {
@@ -1120,34 +806,25 @@ app.get('/api/stats', async (req, res) => {
     const d = await r.json();
     abone = d.count || null;
   } catch(e) {}
-
   res.json({
     toplamHaber: haberler.length,
     tweetAtilanlar: haberler.filter(h => h.tweetAtildi).length,
     sonGuncelleme: new Date().toISOString(),
     trends: STATIC_TRENDS,
     abone,
-    seffaflik: {
-      taranan: seffaflikStats.haftalikTaranan,
-      eklenen: seffaflikStats.haftalikEklenen,
-      elenen: seffaflikStats.haftalikElenen,
-    }
+    seffaflik: { taranan: seffaflikStats.haftalikTaranan, eklenen: seffaflikStats.haftalikEklenen, elenen: seffaflikStats.haftalikElenen }
   });
 });
-
 app.post('/api/abone', async (req, res) => {
   const { email } = req.body;
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'Gecersiz email' });
-
   try {
     const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-
     const response = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
       headers: { 'accept': 'application/json', 'content-type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
       body: JSON.stringify({ email, listIds: [2], updateEnabled: true, attributes: { SOURCE: 'anlikhaber.com' } })
     });
-
     if (response.ok || response.status === 204) {
       await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
@@ -1156,24 +833,20 @@ app.post('/api/abone', async (req, res) => {
           sender: { name: 'AnlıkHaber', email: 'yonetim@anlikhaber.com' },
           to: [{ email }],
           subject: 'AnlıkHaber Bültenine Hoş Geldiniz! 📊',
-          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0f;color:#f0ede8;padding:32px;border-radius:12px"><h1 style="color:#e8c84a">AnlıkHaber</h1><p style="color:#6b6b80">anlikhaber.com</p><h2>Bültenimize Hoş Geldiniz! 🎉</h2><p style="color:#b8b5b0;line-height:1.8">Her sabah 07:00'de Türkiye ve dünyadan en önemli finans haberlerini e-postanıza gönderiyoruz.</p><a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">Siteyi Ziyaret Et →</a><p style="color:#6b6b80;font-size:11px;margin-top:32px">© 2025 AnlıkHaber · anlikhaber.com · reklam@anlikhaber.com</p></div>`
+          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0f;color:#f0ede8;padding:32px;border-radius:12px"><h1 style="color:#e8c84a">AnlıkHaber</h1><h2>Bültenimize Hoş Geldiniz! 🎉</h2><p style="color:#b8b5b0;line-height:1.8">Her sabah 07:00'de en önemli finans haberlerini e-postanıza gönderiyoruz.</p><a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">Siteyi Ziyaret Et →</a></div>`
         })
       });
       res.json({ success: true, message: 'Abone oldunuz!' });
     } else {
       const err = await response.json();
-      if (err.code === 'duplicate_parameter') {
-        res.json({ success: true, message: 'Zaten abonesiniz!' });
-      } else {
-        res.status(400).json({ error: err.message });
-      }
+      if (err.code === 'duplicate_parameter') res.json({ success: true, message: 'Zaten abonesiniz!' });
+      else res.status(400).json({ error: err.message });
     }
   } catch(e) {
     console.log('Brevo hatasi:', e.message);
     res.status(500).json({ error: 'Sunucu hatasi' });
   }
 });
-
 app.get('/sitemap.xml', (req, res) => {
   const urls = haberler.slice(0, 100).map(h => `
   <url>
@@ -1182,16 +855,9 @@ app.get('/sitemap.xml', (req, res) => {
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>`).join('');
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://anlikhaber.com</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>
-  ${urls}
-</urlset>`;
   res.set('Content-Type', 'application/xml');
-  res.send(xml);
+  res.send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anlikhaber.com</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>${urls}</urlset>`);
 });
-
 app.get('/rss', (req, res) => {
   const items = haberler.slice(0, 20).map(h => `
     <item>
@@ -1202,255 +868,64 @@ app.get('/rss', (req, res) => {
       <guid>${h.bizimUrl || h.orijinalUrl || ''}</guid>
       <category>${h.cat || 'finans'}</category>
     </item>`).join('');
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>AnlıkHaber - Son Dakika Finans Haberleri</title>
-    <link>https://anlikhaber.com</link>
-    <description>Türkiye ve dünyadan anlık finans haberleri</description>
-    <language>tr</language>
-    ${items}
-  </channel>
-</rss>`;
   res.set('Content-Type', 'application/rss+xml');
-  res.send(xml);
+  res.send(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>AnlıkHaber - Son Dakika Finans Haberleri</title><link>https://anlikhaber.com</link><description>Türkiye ve dünyadan anlık finans haberleri</description><language>tr</language>${items}</channel></rss>`);
 });
-
-// Test bülten endpoint
 app.get('/api/test-bulten', async (req, res) => {
   res.json({ mesaj: 'Bülten gönderiliyor...' });
   await gunlukBultenGonder();
 });
-
 app.get('/api/test-telegram', async (req, res) => {
   await telegramGonder(TELEGRAM_KANAL || req.query.chat_id, '🧪 AnlıkHaber Telegram botu çalışıyor! ✅');
   res.json({ ok: true });
 });
-
 app.get('/', (req, res) => {
   res.json({ status: 'AnlikHaber Backend calisıyor', haberSayisi: haberler.length });
 });
-
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
 // ============ SABAH BÜLTENİ ============
 async function gunlukBultenGonder() {
   if (!process.env.BREVO_API_KEY) return;
   try {
     const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-
-    const bugun = new Date();
-    bugun.setHours(0, 0, 0, 0);
-
-    // Top haber seçimi - kategori çeşitliliği + görüntülenme + sentiment
     const kategoriler = ['finans', 'borsa', 'kripto', 'ekonomi', 'doviz', 'emtia'];
     const secilen = new Set();
     const topHaberler = [];
-
-    // Her kategoriden en çok görüntülenen 2 haber
     kategoriler.forEach(cat => {
-      const katHaberler = haberler
-        .filter(h => h.cat === cat)
-        .sort((a, b) => {
-          const aGor = goruntulenmeSayaci[a.slug] || 0;
-          const bGor = goruntulenmeSayaci[b.slug] || 0;
-          return bGor - aGor;
-        })
-        .slice(0, 2);
-      katHaberler.forEach(h => {
-        if(!secilen.has(h.slug)) { topHaberler.push(h); secilen.add(h.slug); }
-      });
+      haberler.filter(h => h.cat === cat)
+        .sort((a, b) => (goruntulenmeSayaci[b.slug] || 0) - (goruntulenmeSayaci[a.slug] || 0))
+        .slice(0, 2)
+        .forEach(h => { if(!secilen.has(h.slug)) { topHaberler.push(h); secilen.add(h.slug); } });
     });
-
-    // Kalan slotları yüksek sentiment ile doldur
-    const ekstra = haberler
-      .filter(h => !secilen.has(h.slug) && h.sentiment)
+    haberler.filter(h => !secilen.has(h.slug) && h.sentiment)
       .sort((a, b) => Math.abs(b.sentiment.score - 50) - Math.abs(a.sentiment.score - 50))
-      .slice(0, 20 - topHaberler.length);
-    ekstra.forEach(h => topHaberler.push(h));
-
+      .slice(0, 20 - topHaberler.length)
+      .forEach(h => topHaberler.push(h));
     const finalHaberler = topHaberler.slice(0, 20);
     if(finalHaberler.length === 0) { console.log('Bulten: haber yok'); return; }
-
     const tarih = new Date().toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const saat = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
     const sentiment = sentimentCache;
     const sentimentEmoji = sentiment.skor <= 20 ? '😱' : sentiment.skor <= 40 ? '😟' : sentiment.skor <= 60 ? '😐' : sentiment.skor <= 80 ? '😊' : '🚀';
-
-    // Haber kartları HTML
     const haberlerHTML = finalHaberler.map((h, i) => {
       const skor = h.sentiment ? h.sentiment.score : 50;
       const barRenk = skor >= 65 ? '#22c55e' : skor <= 35 ? '#ef4444' : '#e8c84a';
       const catEmoji = {finans:'📊',borsa:'📈',kripto:'₿',ekonomi:'🏛',doviz:'💱',emtia:'🥇'}[h.cat] || '📰';
-      return `
-      <tr>
-        <td style="padding:0 24px 16px">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:${i%2===0?'#13131a':'#0f0f18'};border-radius:10px;overflow:hidden;border:1px solid #1e1e2a">
-            <tr>
-              <td style="padding:14px 16px">
-                <table width="100%">
-                  <tr>
-                    <td><span style="background:#1e1e2a;color:#e8c84a;font-size:9px;font-weight:700;padding:3px 10px;border-radius:3px;letter-spacing:1px">${catEmoji} ${(h.cat||'haber').toUpperCase()}</span></td>
-                    <td align="right"><span style="color:#6b6b80;font-size:10px">${h.kaynak||''}</span></td>
-                  </tr>
-                  <tr><td colspan="2" style="padding-top:8px">
-                    <a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#f0ede8;font-size:15px;font-weight:600;text-decoration:none;line-height:1.4;display:block">${h.title||''}</a>
-                  </td></tr>
-                  ${h.description ? `<tr><td colspan="2" style="padding-top:6px"><p style="color:#8a8a9a;font-size:12px;line-height:1.6;margin:0">${h.description.substring(0,140)}...</p></td></tr>` : ''}
-                  <tr><td colspan="2" style="padding-top:8px">
-                    <table width="100%"><tr>
-                      <td>
-                        <div style="height:4px;background:#1e1e2a;border-radius:2px;overflow:hidden;width:120px">
-                          <div style="width:${skor}%;height:100%;background:${barRenk};border-radius:2px"></div>
-                        </div>
-                      </td>
-                      <td align="right">
-                        <a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#e8c84a;font-size:12px;text-decoration:none;font-weight:600">Devamını oku →</a>
-                      </td>
-                    </tr></table>
-                  </td></tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>`;
+      return `<tr><td style="padding:0 24px 16px"><table width="100%" cellpadding="0" cellspacing="0" style="background:${i%2===0?'#13131a':'#0f0f18'};border-radius:10px;border:1px solid #1e1e2a"><tr><td style="padding:14px 16px"><span style="background:#1e1e2a;color:#e8c84a;font-size:9px;font-weight:700;padding:3px 10px;border-radius:3px">${catEmoji} ${(h.cat||'haber').toUpperCase()}</span><br><a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#f0ede8;font-size:15px;font-weight:600;text-decoration:none">${h.title||''}</a>${h.description?`<p style="color:#8a8a9a;font-size:12px;margin:6px 0">${h.description.substring(0,140)}...</p>`:''}<br><a href="${h.bizimUrl||'https://anlikhaber.com'}" style="color:#e8c84a;font-size:12px;text-decoration:none;font-weight:600">Devamını oku →</a></td></tr></table></td></tr>`;
     }).join('');
-
-    const htmlContent = `<!DOCTYPE html>
-<html lang="tr">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f0ede6;font-family:Georgia,serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:20px 0">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0">
-
-  <!-- GAZETE BAŞLIĞI -->
-  <tr><td style="background:#0a0a0f;padding:0;border-radius:12px 12px 0 0;overflow:hidden">
-    <!-- Üst şerit -->
-    <table width="100%" style="border-bottom:1px solid #1e1e2a"><tr>
-      <td style="padding:8px 24px;font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:2px">${tarih.toUpperCase()}</td>
-      <td align="right" style="padding:8px 24px;font-family:Arial,sans-serif;font-size:10px;color:#6b6b80">Sayı: ${Math.floor(Date.now()/86400000)}</td>
-    </tr></table>
-    
-    <!-- Logo + Canavar -->
-    <table width="100%"><tr>
-      <td style="padding:20px 24px">
-        <!-- Canavar SVG -->
-        <table><tr><td style="vertical-align:middle;padding-right:16px">
-          <img src="https://i.imgur.com/placeholder.png" width="0" height="0" style="display:none">
-          <svg viewBox="0 0 80 100" width="70" height="88" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="40" cy="68" rx="26" ry="28" fill="#1e4a32"/>
-            <ellipse cx="40" cy="65" rx="22" ry="24" fill="#22573a"/>
-            <ellipse cx="29" cy="90" rx="10" ry="7" fill="#1a3a2a"/>
-            <ellipse cx="51" cy="90" rx="10" ry="7" fill="#1a3a2a"/>
-            <ellipse cx="14" cy="60" rx="7" ry="13" fill="#1a3a2a" transform="rotate(-15 14 60)"/>
-            <ellipse cx="66" cy="60" rx="7" ry="13" fill="#1a3a2a" transform="rotate(15 66 60)"/>
-            <circle cx="72" cy="50" r="8" fill="#e8c84a"/>
-            <circle cx="72" cy="50" r="6" fill="#f0d060"/>
-            <text x="72" y="54" text-anchor="middle" font-size="7" font-weight="700" fill="#8b6914">&#8378;</text>
-            <ellipse cx="40" cy="36" rx="24" ry="22" fill="#22573a"/>
-            <polygon points="22,20 17,3 30,18" fill="#e8c84a"/>
-            <polygon points="58,20 63,3 50,18" fill="#e8c84a"/>
-            <ellipse cx="31" cy="35" rx="9" ry="10" fill="#f5f0d0"/>
-            <ellipse cx="49" cy="35" rx="9" ry="10" fill="#f5f0d0"/>
-            <ellipse cx="32" cy="36" rx="6" ry="7" fill="#1a3a00"/>
-            <ellipse cx="50" cy="36" rx="6" ry="7" fill="#1a3a00"/>
-            <circle cx="33" cy="33" r="2" fill="#fff"/>
-            <circle cx="51" cy="33" r="2" fill="#fff"/>
-            <path d="M31 50 Q40 57 49 50" stroke="#143020" stroke-width="2" fill="none" stroke-linecap="round"/>
-            <rect x="35" y="50" width="5" height="4" rx="1" fill="#f5f0d0"/>
-            <rect x="41" y="50" width="5" height="4" rx="1" fill="#f5f0d0"/>
-          </svg>
-        </td>
-        <td style="vertical-align:middle">
-          <div style="font-family:Georgia,serif;font-size:34px;font-weight:700;color:#f0ede8;letter-spacing:-1px;line-height:1">Anlık<span style="color:#e8c84a">Haber</span></div>
-          <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:3px;margin-top:4px">SABAH BÜLTENİ</div>
-          <div style="font-family:Arial,sans-serif;font-size:12px;color:#e8c84a;margin-top:6px;font-style:italic">"Piyasaları senin yerine takip ediyorum!"</div>
-        </td></tr></table>
-      </td>
-    </tr></table>
-
-    <!-- Karşılama mesajı -->
-    <table width="100%" style="background:#1a2a20;border-top:2px solid #e8c84a"><tr>
-      <td style="padding:14px 24px;font-family:Arial,sans-serif">
-        <span style="color:#e8c84a;font-size:14px;font-weight:700">🌅 Şeriflerinizin sabahı hayırlı olsun efendim!</span><br>
-        <span style="color:#b0c8b8;font-size:12px">Bugünün en önemli ${finalHaberler.length} finansal gelişmesini derledim. ${saat} itibarıyla piyasa durumu:</span>
-      </td>
-    </tr></table>
-  </td></tr>
-
-  <!-- CANLI KURLAR NOTU -->
-  <tr><td style="background:#0d0d16;padding:14px 24px;border-bottom:1px solid #1e1e2a">
-    <table width="100%"><tr>
-      <td style="font-family:Arial,sans-serif;font-size:12px;color:#b0c8b8">
-        📊 <b style="color:#e8c84a">Güncel piyasa verilerine ulas:</b>
-      </td>
-      <td align="right">
-        <a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;font-size:11px;font-weight:700;padding:6px 14px;border-radius:6px;text-decoration:none;font-family:Arial,sans-serif">Canli Kurlar →</a>
-      </td>
-    </tr></table>
-    <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;margin-top:6px">USD/TRY · EUR/TRY · Altin · BTC · ETH · BIST100 — Anlik veriler anlikhaber.com adresinde</div>
-  </td></tr>
-
-  <!-- SENTIMENT BANT -->
-  <tr><td style="background:linear-gradient(90deg,#0a1a12,#0d1a10);padding:12px 24px;border-bottom:2px solid #e8c84a">
-    <table width="100%"><tr>
-      <td style="font-family:Arial,sans-serif;font-size:12px;color:#b0c8b8">
-        ${sentimentEmoji} <b style="color:#e8c84a">AI Piyasa Duygusu:</b> ${sentiment.etiket||'Nötr'} — Skor: ${sentiment.skor||50}/100
-      </td>
-      <td align="right" style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80">
-        ${sentiment.pozitif||0} pozitif · ${sentiment.negatif||0} negatif · ${sentiment.toplamHaber||0} haber
-      </td>
-    </tr></table>
-  </td></tr>
-
-  <!-- BUGÜNÜN HABERLERİ BAŞLIK -->
-  <tr><td style="background:#0a0a0f;padding:14px 24px 0">
-    <div style="border-bottom:2px solid #e8c84a;padding-bottom:10px;margin-bottom:4px">
-      <span style="font-family:Georgia,serif;font-size:22px;font-weight:700;color:#f0ede8;letter-spacing:-0.5px">Bugünün Öne Çıkan Haberleri</span>
-    </div>
-    <div style="font-family:Arial,sans-serif;font-size:10px;color:#6b6b80;letter-spacing:1px;padding-bottom:14px">EN ÇOK OKUNAN · YAPAY ZEKA SEÇİMİ · KATEGORİ ÇEŞİTLİLİĞİ</div>
-  </td></tr>
-
-  <!-- HABERLER -->
-  ${haberlerHTML}
-
-  <!-- ALT -->
-  <tr><td style="background:#13131a;padding:20px 24px;text-align:center;border-top:1px solid #1e1e2a">
-    <a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;font-family:Arial,sans-serif;display:inline-block">Tüm Haberleri Gör →</a>
-  </td></tr>
-
-  <!-- FOOTER -->
-  <tr><td style="background:#0a0a0f;padding:16px 24px;border-radius:0 0 12px 12px;border-top:1px solid #1e1e2a;text-align:center">
-    <p style="font-family:Arial,sans-serif;color:#6b6b80;font-size:10px;margin:0;line-height:1.8">
-      © 2026 AnlıkHaber · anlikhaber.com<br>
-      <a href="https://anlikhaber.com" style="color:#e8c84a;text-decoration:none">@anlikhaberkanal</a> · Telegram kanalımızı takip edin<br>
-      <a href="{{unsubscribe}}" style="color:#6b6b80">Abonelikten çık</a>
-    </p>
-  </td></tr>
-
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
-
-    // Brevo ile gönder
+    const htmlContent = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0ede6;font-family:Georgia,serif"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 0"><table width="600" cellpadding="0" cellspacing="0"><tr><td style="background:#0a0a0f;padding:24px;border-radius:12px 12px 0 0"><div style="font-size:28px;font-weight:700;color:#f0ede8">Anlık<span style="color:#e8c84a">Haber</span></div><div style="color:#6b6b80;font-size:11px;letter-spacing:2px">SABAH BÜLTENİ · ${tarih.toUpperCase()}</div></td></tr><tr><td style="background:#1a2a20;padding:12px 24px;border-top:2px solid #e8c84a"><span style="color:#e8c84a;font-weight:700">🌅 Şeriflerinizin sabahı hayırlı olsun!</span><br><span style="color:#b0c8b8;font-size:12px">${sentimentEmoji} Piyasa Duygusu: <b>${sentiment.etiket||'Nötr'}</b> — Skor: ${sentiment.skor||50}/100</span></td></tr><tr><td style="background:#0a0a0f;padding:14px 24px 0"><div style="border-bottom:2px solid #e8c84a;padding-bottom:10px;margin-bottom:4px"><span style="font-size:20px;font-weight:700;color:#f0ede8">Bugünün Öne Çıkan Haberleri</span></div></td></tr>${haberlerHTML}<tr><td style="background:#13131a;padding:16px 24px;text-align:center"><a href="https://anlikhaber.com" style="background:#e8c84a;color:#0a0a0f;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700">Tüm Haberleri Gör →</a></td></tr><tr><td style="background:#0a0a0f;padding:12px 24px;border-radius:0 0 12px 12px;text-align:center"><p style="color:#6b6b80;font-size:10px;margin:0">© 2026 AnlıkHaber · anlikhaber.com<br><a href="{{unsubscribe}}" style="color:#6b6b80">Abonelikten çık</a></p></td></tr></table></td></tr></table></body></html>`;
     const response = await fetch('https://api.brevo.com/v3/emailCampaigns', {
       method: 'POST',
       headers: { 'accept': 'application/json', 'content-type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
       body: JSON.stringify({
         name: 'AnlıkHaber Sabah Bülteni - ' + tarih,
-        subject: '🌅 ' + tarih + ' | Şeriflerinizin sabahı hayırlı olsun! AnlıkHaber Bülteni',
+        subject: '🌅 ' + tarih + ' | AnlıkHaber Sabah Bülteni',
         sender: { name: 'AnlıkHaber', email: 'yonetim@anlikhaber.com' },
         type: 'classic',
         htmlContent,
         recipients: { listIds: [2] }
       })
     });
-
     const result = await response.json();
     if(result.id) {
       await fetch('https://api.brevo.com/v3/emailCampaigns/' + result.id + '/sendNow', {
@@ -1458,19 +933,8 @@ async function gunlukBultenGonder() {
         headers: { 'accept': 'application/json', 'api-key': process.env.BREVO_API_KEY }
       });
       console.log('Sabah bülteni gönderildi! ID:', result.id);
-
-      // Telegram sabah özeti
       if(TELEGRAM_KANAL) {
-        const tgMesaj = [
-          '🌅 <b>Şeriflerinizin sabahı hayırlı olsun!</b>',
-          '',
-          sentimentEmoji + ' Piyasa Duygusu: <b>' + (sentiment.etiket||'Nötr') + '</b>',
-          '',
-          '📰 Bugünün öne çıkan haberleri:',
-          ...finalHaberler.slice(0,5).map((h,i) => (i+1) + '. <a href="' + h.bizimUrl + '">' + h.title.substring(0,60) + '</a>'),
-          '',
-          '🔗 <a href="https://anlikhaber.com">Tüm haberler için tıkla</a>'
-        ].join('\n');
+        const tgMesaj = ['🌅 <b>Şeriflerinizin sabahı hayırlı olsun!</b>', '', sentimentEmoji + ' Piyasa: <b>' + (sentiment.etiket||'Nötr') + '</b>', '', '📰 Bugünün haberleri:', ...finalHaberler.slice(0,5).map((h,i) => (i+1) + '. <a href="' + h.bizimUrl + '">' + h.title.substring(0,60) + '</a>'), '', '🔗 <a href="https://anlikhaber.com">Tüm haberler</a>'].join('\n');
         await telegramGonder(TELEGRAM_KANAL, tgMesaj);
       }
     } else {
@@ -1480,125 +944,41 @@ async function gunlukBultenGonder() {
     console.log('Bülten gönderme hatası:', e.message);
   }
 }
-
-// Her 30 dk RSS tara
+// ============ CRON JOBS ============
 cron.schedule('*/30 * * * *', fetchAndSaveNews);
-
-// Her Pazar 20:00 TR (17:00 UTC) şeffaflık raporu tweet
-cron.schedule('0 17 * * 0', async () => {
-  const s = seffaflikStats;
-  const tweetText = [
-    `📊 AnlıkHaber Haftalık AI Şeffaflık Raporu`,
-    ``,
-    `Bu hafta:`,
-    `🔍 ${s.haftalikTaranan} haber tarandı`,
-    `✅ ${s.haftalikEklenen} haber yayınlandı`,
-    `🚫 ${s.haftalikElenen} haber elendi (manipülatif/kalitesiz)`,
-    ``,
-    `Size sadece güvenilir, temizlenmiş haberleri sunuyoruz.`,
-    ``,
-    `#anlikhaber #finans #yapayzekagazetecilik`
-  ].join('\n').substring(0, 280);
-
-  try {
-    await twitter.v2.tweet(tweetText);
-    console.log('Şeffaflık raporu tweet atıldı!');
-    // Haftalık sayaçları sıfırla
-    seffaflikStats.haftalikTaranan = 0;
-    seffaflikStats.haftalikEklenen = 0;
-    seffaflikStats.haftalikElenen = 0;
-    seffaflikStats.haftaBaslangic = new Date();
-  } catch(e) {
-    console.log('Şeffaflık tweet hatası:', e.message);
-  }
-});
-
-// Her sabah 07:00 TR saati (04:00 UTC) bülten gönder
 cron.schedule('0 4 * * *', async () => {
   console.log('Sabah bülteni gönderiliyor...');
   await gunlukBultenGonder();
-  
-  // Telegram sabah özeti
-  if(TELEGRAM_KANAL && haberler.length > 0) {
-    const bugunHaberleri = haberler.slice(0, 5);
-    const mesaj = [
-      '🌅 <b>Günaydın! AnlıkHaber Sabah Özeti</b>',
-      '',
-      ...bugunHaberleri.map((h, i) => (i+1) + '. <a href="' + h.bizimUrl + '">' + h.title + '</a>'),
-      '',
-      '📊 Tüm haberler: <a href="https://anlikhaber.com">anlikhaber.com</a>'
-    ].join('\n');
-    await telegramGonder(TELEGRAM_KANAL, mesaj);
-  }
 });
-
-// Pazartesi 09:00 TR (06:00 UTC) sentiment raporu tweet
+cron.schedule('0 17 * * 0', async () => {
+  const s = seffaflikStats;
+  const tweetText = [`📊 AnlıkHaber Haftalık AI Şeffaflık Raporu`, ``, `Bu hafta:`, `🔍 ${s.haftalikTaranan} haber tarandı`, `✅ ${s.haftalikEklenen} haber yayınlandı`, `🚫 ${s.haftalikElenen} haber elendi`, ``, `#anlikhaber #finans #yapayzekagazetecilik`].join('\n').substring(0, 280);
+  try {
+    await twitter.v2.tweet(tweetText);
+    seffaflikStats.haftalikTaranan = 0; seffaflikStats.haftalikEklenen = 0; seffaflikStats.haftalikElenen = 0; seffaflikStats.haftaBaslangic = new Date();
+  } catch(e) { console.log('Şeffaflık tweet hatası:', e.message); }
+});
 cron.schedule('0 6 * * 1', async () => {
   const s = sentimentCache;
   if(!s || !s.etiket) return;
-  
-  let emoji = '😐';
-  if(s.skor <= 20) emoji = '😱';
-  else if(s.skor <= 40) emoji = '😟';
-  else if(s.skor <= 60) emoji = '😐';
-  else if(s.skor <= 80) emoji = '😊';
-  else emoji = '🚀';
-
-  const tweetText = [
-    `${emoji} AnlıkHaber AI Piyasa Duygu Raporu`,
-    ``,
-    `📊 Genel Duygu: ${s.etiket}`,
-    `📈 Skor: ${s.skor}/100`,
-    `🔍 ${s.toplamHaber} haber analiz edildi`,
-    `✅ ${s.pozitif} pozitif | 🔴 ${s.negatif} negatif`,
-    ``,
-    `🔗 anlikhaber.com`,
-    ``,
-    `#piyasa #borsa #anlikhaber #yapayZeka`
-  ].join('\n').substring(0, 280);
-
-  try {
-    await twitter.v2.tweet(tweetText);
-    console.log('Sentiment tweet atıldı!');
-  } catch(e) {
-    console.log('Sentiment tweet hatası:', e.message);
+  const emoji = s.skor <= 20 ? '😱' : s.skor <= 40 ? '😟' : s.skor <= 60 ? '😐' : s.skor <= 80 ? '😊' : '🚀';
+  const tweetText = [`${emoji} AnlıkHaber AI Piyasa Duygu Raporu`, ``, `📊 Genel Duygu: ${s.etiket}`, `📈 Skor: ${s.skor}/100`, `🔍 ${s.toplamHaber} haber analiz edildi`, ``, `🔗 anlikhaber.com`, ``, `#piyasa #borsa #anlikhaber`].join('\n').substring(0, 280);
+  try { await twitter.v2.tweet(tweetText); } catch(e) { console.log('Sentiment tweet hatası:', e.message); }
+  if(TELEGRAM_KANAL) {
+    const mesaj = ['📊 <b>AnlıkHaber Haftalık AI Piyasa Raporu</b>', '', emoji + ' Genel Duygu: <b>' + s.etiket + '</b>', '📈 Skor: <b>' + s.skor + '/100</b>', '🔍 ' + s.toplamHaber + ' haber analiz edildi', '', '🔗 <a href="https://anlikhaber.com">anlikhaber.com</a>', '', '<i>Bu analiz yatırım tavsiyesi içermez.</i>'].join('\n');
+    await telegramGonder(TELEGRAM_KANAL, mesaj);
+    if(TELEGRAM_GRUP) await telegramGonder(TELEGRAM_GRUP, mesaj);
   }
 });
-
-// Pazartesi 09:00 Telegram sentiment raporu
-cron.schedule('0 6 * * 1', async () => {
-  const s = sentimentCache;
-  if(!s || !TELEGRAM_KANAL) return;
-  
-  let emoji = s.skor <= 20 ? '😱' : s.skor <= 40 ? '😟' : s.skor <= 60 ? '😐' : s.skor <= 80 ? '😊' : '🚀';
-  
-  const mesaj = [
-    '📊 <b>AnlıkHaber Haftalık AI Piyasa Raporu</b>',
-    '',
-    emoji + ' Genel Duygu: <b>' + s.etiket + '</b>',
-    '📈 Skor: <b>' + s.skor + '/100</b>',
-    '🔍 ' + s.toplamHaber + ' haber analiz edildi',
-    '✅ ' + s.pozitif + ' pozitif | 🔴 ' + s.negatif + ' negatif',
-    '',
-    '🔗 <a href="https://anlikhaber.com">anlikhaber.com</a>',
-    '',
-    '<i>Bu analiz yatırım tavsiyesi içermez.</i>'
-  ].join('\n');
-  
-  await telegramGonder(TELEGRAM_KANAL, mesaj);
-  if(TELEGRAM_GRUP) await telegramGonder(TELEGRAM_GRUP, mesaj);
-});
-
-// Her 2 saatte 1 tweet (günde 12, haftada ~84)
 cron.schedule('0 */2 * * *', async () => {
   const bekleyenler = haberler.filter(h => !h.tweetAtildi && !postedUrls.has(h.orijinalUrl));
-  if (bekleyenler.length === 0) { console.log('Tweet kuyrugu bos'); return; }
+  if (bekleyenler.length === 0) return;
   await tweetHaber(bekleyenler[0]);
 });
-
+// ============ BAŞLAT ============
 app.listen(PORT, async () => {
-  anlikHaberModulleriniBaslat(app, twitterClient);
+  anlikHaberModulleriniBaslat(app, twitter);
   console.log('AnlikHaber Backend - Port:', PORT);
   await fetchAndSaveNews();
-  setTimeout(sentimentAnalizi, 2000); // Haberler yuklendikten 2sn sonra
+  setTimeout(sentimentAnalizi, 2000);
 });
