@@ -8,6 +8,33 @@ const Parser = require('rss-parser');
 const slugify = require('slugify');
 const Anthropic = require('@anthropic-ai/sdk');
 const app = express();
+
+// Top-level fetch — her fonksiyonda tekrar tanımlamaktan kaçın
+const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
+
+// Model sabitleri — tek yerden yönet
+const MODEL_HAIKU  = 'claude-haiku-4-5-20251001';
+const MODEL_SONNET = 'claude-sonnet-4-5';  // Derin analiz / premium içerik
+
+// Yardımcı: retry wrapper (max 2 deneme, 3sn bekleme)
+async function withRetry(fn, retries = 2, delayMs = 3000) {
+  for (let i = 0; i <= retries; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (i === retries) throw e;
+      console.log(`[retry ${i+1}/${retries}]`, e.message);
+      await sleep(delayMs);
+    }
+  }
+}
+
+// Yardımcı: JSON bloğunu metinden çıkar (iç içe JSON'u da yakalar)
+function extractJSON(text) {
+  const start = text.indexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start === -1 || end === -1) throw new Error('JSON bloğu bulunamadı');
+  return JSON.parse(text.slice(start, end + 1));
+}
 const PORT = process.env.PORT || 3000;
 // Telegram Bot
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -22,7 +49,6 @@ async function telegramGonder(chatId, mesaj) {
     return;
   }
   try {
-    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
     const r = await fetch('https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -130,45 +156,35 @@ function createSlug(title) {
 async function generateTurkishContent(haber) {
   if (!anthropic) return { title: haber.title, content: haber.description || '' };
   try {
-    const bugun = new Date().toLocaleDateString('tr-TR', {day:'numeric', month:'long', year:'numeric'});
+    const gun = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
+      model: MODEL_HAIKU,
+      max_tokens: 400,
       messages: [{
         role: 'user',
-        content: `Sen AnlıkHaber için çalışan bir Türk finans haber editörüsün. Aşağıdaki haberi Google Discover ve SEO için optimize et.
-Bugünün tarihi: ${bugun}
-Orijinal başlık: ${haber.title.substring(0, 150)}
-Açıklama: ${(haber.description || '').substring(0, 300)}
-Kaynak: ${haber.kaynak}
-Kategori: ${haber.cat || 'finans'}
-GÖREV 1 - BAŞLIK: Google Discover için merak uyandıran ama tıklama tuzağı olmayan başlık yaz.
-Örnekler: "Borsa İstanbul'da Bilanço Şoku mu, Şöleni mi?", "Dolar 45 TL'yi Aşar mı? İşte Kritik Eşik"
-Başlığa bugünün tarihini ekle.
-GÖREV 2 - GİRİŞ PARAGRAFI: "Claude AI analizimize göre..." diye başla, haberin can alıcı verisini ver, merak uyandır.
-2-3 cümle, meta description olarak kullanılacak.
-GÖREV 3 - GÖRSEL PROMPT: Siyah ve altın sarısı renk paleti, fütüristik, dijital tema. Haberin konusunu görselleştir.
-Örnek: "Futuristic stock market trading floor, golden glowing holographic charts, black and gold palette, 16:9, cinematic"
-SADECE JSON döndür:
-{"title":"başlık","content":"içerik 3-4 cümle","metaDesc":"giriş paragrafı 150 karakter","imagePrompt":"görsel prompt İngilizce"}`
+        content: `Türk finans editörü. SADECE JSON döndür.
+Başlık: ${haber.title.substring(0, 120)}
+İçerik: ${(haber.description || '').substring(0, 200)}
+Kaynak: ${haber.kaynak} | Kategori: ${haber.cat || 'finans'} | Tarih: ${gun}
+{"title":"SEO başlık tarih içersin max 80 karakter","content":"3 cümle özet","metaDesc":"150 karakter meta","imagePrompt":"fintech dark gold 16:9 cinematic"}`
       }]
     });
-    const text = response.content[0].text.trim();
-    const match = text.match(/\{[\s\S]*?\}/);
-    if (!match) throw new Error('JSON bulunamadi');
-    const parsed = JSON.parse(match[0]);
+    const parsed = extractJSON(response.content[0].text.trim());
     return {
-      title: (parsed.title || haber.title).substring(0, 200),
-      content: (parsed.content || haber.description || '').substring(0, 800),
-      metaDesc: (parsed.metaDesc || '').substring(0, 160),
+      title:       (parsed.title || haber.title).substring(0, 200),
+      content:     (parsed.content || haber.description || '').substring(0, 600),
+      metaDesc:    (parsed.metaDesc || '').substring(0, 160),
       imagePrompt: parsed.imagePrompt || ''
     };
   } catch(e) {
-    console.log('AI icerik hatasi:', e.message);
+    console.log('[AI içerik] hata:', e.message);
     return { title: haber.title, content: haber.description || '', metaDesc: '', imagePrompt: '' };
   }
 }
+let fetchRunning = false;
 async function fetchAndSaveNews() {
+  if (fetchRunning) { console.log('[RSS] Önceki tarama devam ediyor, atlanıyor.'); return; }
+  fetchRunning = true;
   console.log('RSS taramasi baslıyor...');
   let yeni = 0;
   for (const feed of RSS_FEEDS) {
@@ -270,26 +286,24 @@ async function fetchAndSaveNews() {
     }
   }
   console.log('RSS bitti. ' + yeni + ' yeni haber.');
+  fetchRunning = false;
   if(yeni > 0) setTimeout(sentimentAnalizi, 1000);
 }
 async function generateAnalitikThread(haber) {
   if (!anthropic) return;
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
+      model: MODEL_HAIKU,
+      max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Türk finans analisti olarak şu haberi analiz et ve X (Twitter) için kısa bir thread yaz.
-Haber: ${haber.title}
-Şunu yap: "Bu verinin/kararın/haberin 3 olası etkisi:" formatında 3 madde yaz.
-Sadece JSON döndür: {"thread": "🧵 Başlık\n\n1️⃣ ...\n2️⃣ ...\n3️⃣ ...\n\n#finans #anlikhaber"}`
+        content: `X thread yaz. SADECE JSON.
+Haber: ${haber.title.substring(0, 100)}
+{"thread":"🧵 Başlık\n\n1️⃣ etki\n2️⃣ etki\n3️⃣ etki\n\n#finans #anlikhaber"}`
       }]
     });
-    const text = response.content[0].text.trim();
-    const match = text.match(/\{[\s\S]*?\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
+    const parsed = extractJSON(response.content[0].text.trim());
+    if (parsed) {
       if (parsed.thread) {
         haber.analitikThread = parsed.thread.substring(0, 280);
         console.log('Analitik thread oluşturuldu:', haber.title.substring(0, 40));
@@ -342,27 +356,17 @@ async function anketSorusuUret() {
   try {
     const gundem = haberler.slice(0, 30).map(h => h.title).join('\n');
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
+      model: MODEL_HAIKU,
+      max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Sen bir finansal analist ve editörsün. Aşağıdaki güncel finans haberlerinden yola çıkarak 1 adet anket sorusu üret.
-Gündem:
-${gundem.substring(0, 1000)}
-KURALLAR:
-1. Soru altın, BTC, TL/USD/EUR veya emtia ile ilgili olsun
-2. Soru kusursuz akademik Türkçeyle yazılmış olsun
-3. Mantık hatası olmasın — soru net, tarafsız ve manipülasyon içermemeli
-4. Soru bir öngörü veya değerlendirme istesin (örn: "... beklentiniz nedir?", "... düşünüyor musunuz?")
-5. Seçenekler sabit: Katılıyorum / Katılmıyorum / Kararsızım
-Sadece JSON döndür:
-{"soru": "Soru metni burada", "konu": "altin/btc/usd/eur/emtia/faiz", "aciklama": "Sorunun neden önemli olduğunu 1 cümle ile açıkla"}`
+        content: `Finans anketi üret. SADECE JSON.
+Gündem: ${gundem.substring(0, 600)}
+Konu altın/BTC/TL-USD/emtia/faiz. Tarafsız, akademik Türkçe.
+{"soru":"soru metni","konu":"altin/btc/usd/eur/emtia/faiz","aciklama":"1 cümle"}`
       }]
     });
-    const text = response.content[0].text.trim();
-    const match = text.match(/\{[\s\S]*?\}/);
-    if(!match) return null;
-    return JSON.parse(match[0]);
+    return extractJSON(response.content[0].text.trim());
   } catch(e) {
     console.log('Anket soru üretim hatası:', e.message);
     return null;
@@ -517,9 +521,9 @@ app.post('/api/anket/:id/reddet', (req, res) => {
   res.json({ ok: true });
 });
 app.get('/api/anket/uret', async (req, res) => {
-  res.json({ mesaj: 'Üretiliyor...' });
-  const soru = await anketSorusuUret();
-  if(soru) {
+  try {
+    const soru = await anketSorusuUret();
+    if (!soru || !soru.soru) return res.status(500).json({ error: 'Anket üretilemedi. AI yanıt vermedi.' });
     const anket = {
       id: 'anket_' + Date.now(),
       soru: soru.soru, konu: soru.konu, aciklama: soru.aciklama || '',
@@ -530,7 +534,11 @@ app.get('/api/anket/uret', async (req, res) => {
       adminNotu: ''
     };
     anketler.push(anket);
-    console.log('Manuel anket üretildi:', anket.soru.substring(0, 50));
+    console.log('[anket] Manuel üretildi:', anket.soru.substring(0, 50));
+    res.json({ ok: true, anket });
+  } catch(e) {
+    console.error('[anket/uret] hata:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 // ============ DERİN ANALİZ ============
@@ -548,31 +556,21 @@ async function derinAnalizUret() {
     if(derinAnalizler.find(a => a.haberSlug === haber.slug)) continue;
     try {
       await sleep(2000);
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 800,
-        messages: [{
-          role: 'user',
-          content: `Sen AnlıkHaber için yazan kıdemli bir Türk finans analistisin.
-Haber başlığı: ${haber.title}
-Haber özeti: ${(haber.description || '').substring(0, 300)}
-Kategori: ${haber.cat}
-Duygu skoru: ${haber.sentiment.score}/100 (${haber.sentiment.label})
-Bu haberi derinlemesine analiz et. SADECE JSON döndür:
-{
-  "ozet": "Haberin özü 2 cümlede. Net, akademik Türkçe.",
-  "etkiler": ["1. olası etki","2. olası etki","3. olası etki"],
-  "riskler": "Riskler 1 cümlede",
-  "firsatlar": "Fırsatlar 1 cümlede",
-  "xThread": "X için thread başlangıcı (max 240 karakter, emoji ile)",
-  "uyari": "Bu analiz yatırım tavsiyesi değildir."
-}`
-        }]
+      const analiz = await withRetry(async () => {
+        const response = await anthropic.messages.create({
+          model: MODEL_SONNET,
+          max_tokens: 600,
+          messages: [{
+            role: 'user',
+            content: `Türk finans analisti. Haberi analiz et, SADECE JSON döndür:
+Başlık: ${haber.title.substring(0, 120)}
+Özet: ${(haber.description || '').substring(0, 200)}
+Kategori: ${haber.cat} | Duygu: ${haber.sentiment.score}/100
+{"ozet":"2 cümle akademik özet","etkiler":["etki1","etki2","etki3"],"riskler":"1 cümle","firsatlar":"1 cümle","xThread":"max 200 karakter emoji ile","uyari":"Bu analiz yatırım tavsiyesi değildir."}`
+          }]
+        });
+        return extractJSON(response.content[0].text.trim());
       });
-      const text = response.content[0].text.trim();
-      const match = text.match(/\{[\s\S]*\}/);
-      if(!match) continue;
-      const analiz = JSON.parse(match[0]);
       const derinAnaliz = {
         id: 'analiz_' + Date.now(),
         haberSlug: haber.slug,
@@ -614,7 +612,9 @@ Bu haberi derinlemesine analiz et. SADECE JSON döndür:
         await telegramGonder(TELEGRAM_KANAL, tgMesaj);
         if(TELEGRAM_GRUP) await telegramGonder(TELEGRAM_GRUP, tgMesaj);
       }
-    } catch(e) { console.log('Derin analiz hatası:', e.message); }
+    } catch(e) {
+      console.error('[derinAnaliz] HATA:', e.message, '| Haber:', haber.title.substring(0, 60));
+    }
   }
   return yeniAnalizler;
 }
@@ -745,52 +745,111 @@ app.get('/api/sentiment/:slug', (req, res) => {
 let piyasaCache = {};
 let piyasaSonGuncelleme = 0;
 async function piyasaGuncelle() {
-  const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
   const result = {};
+
+  // ── Kripto (Binance) ──────────────────────────────────────────────────────
   try {
-    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT","BNBUSDT"]');
-    const data = await r.json();
-    data.forEach(d => {
-      const price = parseFloat(d.lastPrice);
-      const chg = parseFloat(d.priceChangePercent).toFixed(2);
-      if(d.symbol === 'BTCUSDT') { result.btc = Math.round(price); result.btcChg = chg; }
-      if(d.symbol === 'ETHUSDT') { result.eth = Math.round(price); result.ethChg = chg; }
-    });
-  } catch(e) { console.log('Binance hata:', e.message); }
-  try {
-    const r = await fetch('https://open.er-api.com/v6/latest/USD');
-    const d = await r.json();
-    if(d.rates) {
-      result.usdtry = d.rates.TRY ? d.rates.TRY.toFixed(2) : null;
-      result.eurtry = (d.rates.TRY && d.rates.EUR) ? (d.rates.TRY / d.rates.EUR).toFixed(2) : null;
-      result.gbptry = (d.rates.TRY && d.rates.GBP) ? (d.rates.TRY / d.rates.GBP).toFixed(2) : null;
+    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT"]');
+    if (r.ok) {
+      const data = await r.json();
+      data.forEach(d => {
+        const price = parseFloat(d.lastPrice);
+        const chg   = parseFloat(d.priceChangePercent).toFixed(2);
+        if (d.symbol === 'BTCUSDT') { result.btc = Math.round(price); result.btcChg = chg; }
+        if (d.symbol === 'ETHUSDT') { result.eth = Math.round(price); result.ethChg = chg; }
+      });
     }
-  } catch(e) {
+  } catch(e) { console.log('[piyasa] Binance:', e.message); }
+
+  // ── Döviz kurları ─────────────────────────────────────────────────────────
+  const dovizKaynaklari = [
+    'https://open.er-api.com/v6/latest/USD',
+    'https://api.frankfurter.app/latest?from=USD&to=TRY,EUR,GBP',
+  ];
+  for (const url of dovizKaynaklari) {
     try {
-      const r = await fetch('https://api.frankfurter.app/latest?from=USD&to=TRY,EUR,GBP');
+      const r = await fetch(url);
+      if (!r.ok) continue;
       const d = await r.json();
-      if(d.rates) {
-        result.usdtry = d.rates.TRY ? d.rates.TRY.toFixed(2) : null;
-        result.eurtry = (d.rates.TRY && d.rates.EUR) ? (d.rates.TRY / d.rates.EUR).toFixed(2) : null;
-        result.gbptry = (d.rates.TRY && d.rates.GBP) ? (d.rates.TRY / d.rates.GBP).toFixed(2) : null;
+      const rates = d.rates || {};
+      const tryRate = rates.TRY;
+      if (tryRate) {
+        result.usdtry = tryRate.toFixed(2);
+        result.eurtry = rates.EUR ? (tryRate / rates.EUR).toFixed(2) : null;
+        result.gbptry = rates.GBP ? (tryRate / rates.GBP).toFixed(2) : null;
+        result._tryRate = tryRate; // gram altın hesabı için iç kullanım
+        break;
       }
-    } catch(e2) {}
+    } catch(e) { /* sonraki kaynağa geç */ }
   }
-  try {
-    const r = await fetch('https://api.metals.live/v1/spot/gold');
-    const d = await r.json();
-    if(d && d[0] && d[0].gold) result.gold = Math.round(d[0].gold);
-  } catch(e) {
-    try {
-      const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
+
+  // ── Ons altın (USD) ───────────────────────────────────────────────────────
+  const goldKaynaklari = [
+    async () => {
+      const r = await fetch('https://api.metals.live/v1/spot/gold');
+      if (!r.ok) throw new Error('metals.live ' + r.status);
       const d = await r.json();
-      if(d.rates && d.rates.USD) result.gold = Math.round(1 / d.rates.USD);
-    } catch(e2) {}
+      return (d && d[0] && d[0].gold) ? Math.round(d[0].gold) : null;
+    },
+    async () => {
+      // Frankfurter XAU/USD
+      const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
+      if (!r.ok) throw new Error('frankfurter XAU ' + r.status);
+      const d = await r.json();
+      return (d.rates && d.rates.USD) ? Math.round(1 / d.rates.USD) : null;
+    },
+  ];
+  for (const fn of goldKaynaklari) {
+    try {
+      const gold = await fn();
+      if (gold) { result.gold = gold; break; }
+    } catch(e) { /* sonraki */ }
   }
+
+  // ── Gram altın (TL) — hesaplama ───────────────────────────────────────────
+  if (result.gold && result._tryRate) {
+    result.gramAltin = Math.round((result.gold * result._tryRate) / 31.1035);
+  }
+  delete result._tryRate; // iç alan temizle
+
+  // ── BIST100 (Yahoo Finance) ───────────────────────────────────────────────
+  try {
+    const r = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/XU100.IS?interval=1d&range=1d', {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const meta = d?.chart?.result?.[0]?.meta;
+      if (meta?.regularMarketPrice) {
+        result.bist100     = Math.round(meta.regularMarketPrice);
+        result.bist100Chg  = meta.regularMarketPrice && meta.previousClose
+          ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose * 100).toFixed(2)
+          : null;
+      }
+    }
+  } catch(e) { console.log('[piyasa] BIST100:', e.message); }
+
+  // ── S&P 500 + Nasdaq (Yahoo Finance) ──────────────────────────────────────
+  try {
+    const symbols = ['^GSPC', '^IXIC'];
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      (d?.quoteResponse?.result || []).forEach(q => {
+        const chg = q.regularMarketChangePercent?.toFixed(2);
+        if (q.symbol === '^GSPC')  { result.sp500   = Math.round(q.regularMarketPrice); result.sp500Chg  = chg; }
+        if (q.symbol === '^IXIC')  { result.nasdaq  = Math.round(q.regularMarketPrice); result.nasdaqChg = chg; }
+      });
+    }
+  } catch(e) { console.log('[piyasa] Yahoo endeksler:', e.message); }
+
   result.guncelleme = new Date().toISOString();
-  piyasaCache = result;
+  piyasaCache       = result;
   piyasaSonGuncelleme = Date.now();
-  console.log('Piyasa güncellendi:', JSON.stringify(result));
+  console.log('[piyasa] Güncellendi — BTC:', result.btc, '| USDTRY:', result.usdtry, '| ONS:', result.gold, '| GRAM:', result.gramAltin, '| BIST:', result.bist100);
   return result;
 }
 cron.schedule('*/5 * * * *', piyasaGuncelle);
@@ -801,7 +860,6 @@ app.get('/api/piyasa', async (req, res) => {
 app.get('/api/stats', async (req, res) => {
   let abone = null;
   try {
-    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
     const r = await fetch('https://api.brevo.com/v3/contacts?limit=1&listId=2', {
       headers: { 'api-key': process.env.BREVO_API_KEY, 'accept': 'application/json' }
     });
@@ -821,7 +879,6 @@ app.post('/api/abone', async (req, res) => {
   const { email } = req.body;
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'Gecersiz email' });
   try {
-    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
     const response = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
       headers: { 'accept': 'application/json', 'content-type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
@@ -830,7 +887,7 @@ app.post('/api/abone', async (req, res) => {
     if (response.ok || response.status === 204) {
       await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
-        headers: { 'accept': 'application/json', 'content-type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
+        headers: { accept: 'application/json', 'content-type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
         body: JSON.stringify({
           sender: { name: 'AnlıkHaber', email: 'yonetim@anlikhaber.com' },
           to: [{ email }],
@@ -889,7 +946,6 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function gunlukBultenGonder() {
   if (!process.env.BREVO_API_KEY) return;
   try {
-    const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
     const kategoriler = ['finans', 'borsa', 'kripto', 'ekonomi', 'doviz', 'emtia'];
     const secilen = new Set();
     const topHaberler = [];
@@ -978,6 +1034,20 @@ cron.schedule('0 */2 * * *', async () => {
   if (bekleyenler.length === 0) return;
   await tweetHaber(bekleyenler[0]);
 });
+// ============ MERKEZI ERROR HANDLER ============
+app.use((err, req, res, next) => {
+  console.error('[Express]', req.method, req.path, '→', err.message);
+  res.status(err.status || 500).json({ error: err.message || 'Sunucu hatası' });
+});
+
+// Yakalanmamış hataları logla, process'i düşürme
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message);
+});
+
 // ============ BAŞLAT ============
 app.listen(PORT, async () => {
   anlikHaberModulleriniBaslat(app, twitter);
