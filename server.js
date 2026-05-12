@@ -260,6 +260,7 @@ async function fetchAndSaveNews() {
             '#' + (haber.cat || 'finans') + ' #anlikhaber'
           ].join('\n');
           setTimeout(() => telegramGonder(TELEGRAM_KANAL, tgMesaj), yeni * 5000);
+          if(TELEGRAM_GRUP) setTimeout(() => telegramGonder(TELEGRAM_GRUP, tgMesaj), yeni * 5000 + 1000);
         }
         if (haberler.length > 500) haberler = haberler.slice(0, 500);
         console.log('Haber eklendi:', turkishTitle.substring(0, 60));
@@ -611,6 +612,7 @@ Bu haberi derinlemesine analiz et. SADECE JSON döndür:
           '🔗 <a href="' + haber.bizimUrl + '">Haberi oku</a>'
         ].join('\n');
         await telegramGonder(TELEGRAM_KANAL, tgMesaj);
+        if(TELEGRAM_GRUP) await telegramGonder(TELEGRAM_GRUP, tgMesaj);
       }
     } catch(e) { console.log('Derin analiz hatası:', e.message); }
   }
@@ -936,6 +938,7 @@ async function gunlukBultenGonder() {
       if(TELEGRAM_KANAL) {
         const tgMesaj = ['🌅 <b>Şeriflerinizin sabahı hayırlı olsun!</b>', '', sentimentEmoji + ' Piyasa: <b>' + (sentiment.etiket||'Nötr') + '</b>', '', '📰 Bugünün haberleri:', ...finalHaberler.slice(0,5).map((h,i) => (i+1) + '. <a href="' + h.bizimUrl + '">' + h.title.substring(0,60) + '</a>'), '', '🔗 <a href="https://anlikhaber.com">Tüm haberler</a>'].join('\n');
         await telegramGonder(TELEGRAM_KANAL, tgMesaj);
+        if(TELEGRAM_GRUP) await telegramGonder(TELEGRAM_GRUP, tgMesaj);
       }
     } else {
       console.log('Bülten hatası:', JSON.stringify(result));
