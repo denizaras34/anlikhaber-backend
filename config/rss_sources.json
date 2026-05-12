@@ -1,0 +1,92 @@
+{
+  "version": "1.0",
+  "guncellendi": "2026-05-10",
+  "ayarlar": {
+    "max_fail_esigi": 3,
+    "timeout_ms": 10000,
+    "saglik_kontrol_araligi_saat": 6,
+    "haftalik_test_gunu": 0
+  },
+  "kaynaklar": [
+    {
+      "id": "bloomberght",
+      "url": "https://www.bloomberght.com/rss",
+      "isim": "Bloomberg HT",
+      "kategori": "genel",
+      "oncelik": 1,
+      "fallback_url": "https://feeds.feedburner.com/hurriyet/BNmJ",
+      "aktif": true,
+      "fail_sayisi": 0
+    },
+    {
+      "id": "hurriyet_ekonomi",
+      "url": "https://feeds.feedburner.com/hurriyet/BNmJ",
+      "isim": "Hürriyet Ekonomi",
+      "kategori": "genel",
+      "oncelik": 1,
+      "fallback_url": "https://www.haberturk.com/rss/ekonomi.xml",
+      "aktif": true,
+      "fail_sayisi": 0
+    },
+    {
+      "id": "haberturk_ekonomi",
+      "url": "https://www.haberturk.com/rss/ekonomi.xml",
+      "isim": "Habertürk Ekonomi",
+      "kategori": "genel",
+      "oncelik": 2,
+      "fallback_url": null,
+      "aktif": true,
+      "fail_sayisi": 0
+    },
+    {
+      "id": "sabah_ekonomi",
+      "url": "https://www.sabah.com.tr/rss/ekonomi.xml",
+      "isim": "Sabah Ekonomi",
+      "kategori": "genel",
+      "oncelik": 2,
+      "fallback_url": null,
+      "aktif": true,
+      "fail_sayisi": 0
+    },
+    {
+      "id": "investing_kripto",
+      "url": "https://tr.investing.com/rss/news_14.rss",
+      "isim": "Investing.com Kripto",
+      "kategori": "kripto",
+      "oncelik": 1,
+      "fallback_url": "https://coindesk.com/arc/outboundfeeds/rss/",
+      "aktif": true,
+      "fail_sayisi": 0
+    },
+    {
+      "id": "investing_doviz",
+      "url": "https://tr.investing.com/rss/news_25.rss",
+      "isim": "Investing.com Forex",
+      "kategori": "döviz",
+      "oncelik": 1,
+      "fallback_url": null,
+      "aktif": true,
+      "fail_sayisi": 0
+    },
+    {
+      "id": "investing_bist",
+      "url": "https://tr.investing.com/rss/news_285.rss",
+      "isim": "Investing.com BIST",
+      "kategori": "bist",
+      "oncelik": 1,
+      "fallback_url": null,
+      "aktif": true,
+      "fail_sayisi": 0
+    },
+    {
+      "id": "coindesk",
+      "url": "https://coindesk.com/arc/outboundfeeds/rss/",
+      "isim": "CoinDesk",
+      "kategori": "kripto",
+      "oncelik": 2,
+      "fallback_url": null,
+      "aktif": true,
+      "fail_sayisi": 0
+    }
+  ]
+}
