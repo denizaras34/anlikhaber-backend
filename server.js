@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { anlikHaberModulleriniBaslat } = require('./server_patch');
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
@@ -1596,6 +1597,7 @@ cron.schedule('0 */2 * * *', async () => {
 });
 
 app.listen(PORT, async () => {
+  anlikHaberModulleriniBaslat(app, twitterClient);
   console.log('AnlikHaber Backend - Port:', PORT);
   await fetchAndSaveNews();
   setTimeout(sentimentAnalizi, 2000); // Haberler yuklendikten 2sn sonra
