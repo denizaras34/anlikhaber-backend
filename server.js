@@ -1,5 +1,6 @@
 require('dotenv').config();
-const { anlikHaberModulleriniBaslat } = require('./server_patch');
+// v2 modülleri devre dışı — monolitle devam (bkz. server_patch.js / modules/)
+// const { anlikHaberModulleriniBaslat } = require('./server_patch');
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
@@ -962,6 +963,9 @@ app.get('/api/test-telegram', async (req, res) => {
 app.get('/', (req, res) => {
   res.json({ status: 'AnlikHaber Backend calisıyor', haberSayisi: haberler.length });
 });
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', haberSayisi: haberler.length, ts: new Date().toISOString() });
+});
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 // ============ SABAH BÜLTENİ ============
 async function gunlukBultenGonder() {
@@ -1071,7 +1075,8 @@ process.on('uncaughtException', (err) => {
 
 // ============ BAŞLAT ============
 app.listen(PORT, async () => {
-  anlikHaberModulleriniBaslat(app, twitter);
+  // v2 modülleri devre dışı — monolitle devam
+  // anlikHaberModulleriniBaslat(app, twitter);
   console.log('AnlikHaber Backend - Port:', PORT);
   await fetchAndSaveNews();
   setTimeout(sentimentAnalizi, 2000);
