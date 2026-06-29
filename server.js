@@ -584,11 +584,11 @@ async function derinAnalizUret() {
           max_tokens: 600,
           messages: [{
             role: 'user',
-            content: `Türk finans analisti. Haberi analiz et, SADECE JSON döndür:
+            content: `Türk finans analisti. Haber için "AnlıkHaber Yorumu" üret, SADECE JSON döndür:
 Başlık: ${haber.title.substring(0, 120)}
 Özet: ${(haber.description || '').substring(0, 200)}
 Kategori: ${haber.cat} | Duygu: ${haber.sentiment.score}/100
-{"ozet":"2 cümle akademik özet","etkiler":["etki1","etki2","etki3"],"riskler":"1 cümle","firsatlar":"1 cümle","xThread":"max 200 karakter emoji ile","uyari":"Bu analiz yatırım tavsiyesi değildir."}`
+{"giris":"2 cümle giriş","turkYatirimciEtki":"2 cümle Türk yatırımcı için etki","riskler":"1-2 cümle","firsatlar":"1-2 cümle","xThread":"max 200 karakter emoji ile","uyari":"Bu yorum yatırım tavsiyesi değildir."}`
           }]
         });
         return extractJSON(response.content[0].text.trim());
@@ -606,6 +606,14 @@ Kategori: ${haber.cat} | Duygu: ${haber.sentiment.score}/100
       derinAnalizler.unshift(derinAnaliz);
       yeniAnalizler.push(derinAnaliz);
       if(derinAnalizler.length > 20) derinAnalizler = derinAnalizler.slice(0, 20);
+      // haber, haberler dizisindeki canlı referansın kendisi (filter referans korur) — doğrudan iliştir (xThread hariç)
+      haber.yorum = {
+        giris: analiz.giris,
+        turkYatirimciEtki: analiz.turkYatirimciEtki,
+        riskler: analiz.riskler,
+        firsatlar: analiz.firsatlar,
+        uyari: analiz.uyari
+      };
       console.log('Derin analiz üretildi:', haber.title.substring(0, 50));
       if(analiz.xThread && process.env.X_API_KEY) {
         try {
@@ -614,18 +622,18 @@ Kategori: ${haber.cat} | Duygu: ${haber.sentiment.score}/100
           await twitter.v2.tweet(tweetText);
         } catch(e) { console.log('Analiz tweet hatası:', e.message); }
       }
-      if(TELEGRAM_KANAL && analiz.ozet) {
+      if(TELEGRAM_KANAL && analiz.giris) {
         const konuEmoji = {finans:'📊',borsa:'📈',kripto:'₿',ekonomi:'🏛',doviz:'💱',emtia:'🥇'};
         const emoji = konuEmoji[haber.cat] || '📊';
         const tgMesaj = [
-          emoji + ' <b>AnlıkHaber Derin Analiz</b>',
+          emoji + ' <b>AnlıkHaber Yorumu</b>',
           '',
           '<b>' + haber.title + '</b>',
           '',
-          '📝 ' + analiz.ozet,
+          '📝 ' + analiz.giris,
           '',
-          '📌 Olası Etkiler:',
-          ...(analiz.etkiler || []).map((e, i) => (i+1) + '. ' + e),
+          '📈 Türk yatırımcı için etki:',
+          analiz.turkYatirimciEtki || '',
           '',
           '⚠️ ' + analiz.uyari,
           '',
