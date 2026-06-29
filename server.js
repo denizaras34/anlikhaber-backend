@@ -569,9 +569,9 @@ async function derinAnalizUret() {
   if(!anthropic) return;
   const onemliHaberler = haberler
     .filter(h => h.sentiment && h.title)
-    .filter(h => /fed|tcmb|merkez banka|faiz|altin|bitcoin|btc|dolar|enflasyon|bist|borsa/i.test(h.title.toLowerCase()))
+    .filter(h => ['ekonomi','borsa','doviz','finans'].includes(h.cat))
     .sort((a, b) => Math.abs(b.sentiment.score - 50) - Math.abs(a.sentiment.score - 50))
-    .slice(0, 3);
+    .slice(0, 5);
   if(onemliHaberler.length === 0) return;
   const yeniAnalizler = [];
   for(const haber of onemliHaberler) {
@@ -581,14 +581,15 @@ async function derinAnalizUret() {
       const analiz = await withRetry(async () => {
         const response = await anthropic.messages.create({
           model: MODEL_SONNET,
-          max_tokens: 600,
+          max_tokens: 900,
           messages: [{
             role: 'user',
-            content: `Türk finans analisti. Haber için "AnlıkHaber Yorumu" üret, SADECE JSON döndür:
+            content: `Türk finans analisti. Haber için "AnlıkHaber Yorumu" üret, SADECE JSON döndür.
+ÖNEMLİ: Geçmişe dair spesifik tarih, rakam veya yüzde UYDURMA; haberde geçmeyen sayısal veri verme. izlenecekGostergeler alanında yalnızca yatırımcının GELECEKTE takip etmesi gereken olay/veri türlerini yaz, kesin tarih verme (örn. "sonraki Fed toplantısı", "açıklanacak TCMB faiz kararı").
 Başlık: ${haber.title.substring(0, 120)}
 Özet: ${(haber.description || '').substring(0, 200)}
 Kategori: ${haber.cat} | Duygu: ${haber.sentiment.score}/100
-{"giris":"2 cümle giriş","turkYatirimciEtki":"2 cümle Türk yatırımcı için etki","riskler":"1-2 cümle","firsatlar":"1-2 cümle","xThread":"max 200 karakter emoji ile","uyari":"Bu yorum yatırım tavsiyesi değildir."}`
+{"giris":"2-3 cümle, haberi bağlama oturtan açıklayıcı giriş","turkYatirimciEtki":"2-3 cümle, Türk yatırımcı için somut etki kanalları","riskler":"2-3 cümle olası riskler","firsatlar":"2-3 cümle olası fırsatlar","izlenecekGostergeler":["gelecekte izlenecek olay/veri türü 1","tür 2","tür 3"],"xThread":"max 200 karakter emoji ile","uyari":"Bu yorum yatırım tavsiyesi değildir."}`
           }]
         });
         return extractJSON(response.content[0].text.trim());
@@ -612,6 +613,7 @@ Kategori: ${haber.cat} | Duygu: ${haber.sentiment.score}/100
         turkYatirimciEtki: analiz.turkYatirimciEtki,
         riskler: analiz.riskler,
         firsatlar: analiz.firsatlar,
+        izlenecekGostergeler: analiz.izlenecekGostergeler,
         uyari: analiz.uyari
       };
       console.log('Derin analiz üretildi:', haber.title.substring(0, 50));
