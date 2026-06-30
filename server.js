@@ -569,7 +569,7 @@ async function derinAnalizUret() {
   if(!anthropic) return;
   const onemliHaberler = haberler
     .filter(h => h.sentiment && h.title)
-    .filter(h => ['ekonomi','borsa','doviz','finans'].includes(h.cat))
+    .filter(h => ['ekonomi','borsa','doviz','finans','kripto'].includes(h.cat))
     .sort((a, b) => Math.abs(b.sentiment.score - 50) - Math.abs(a.sentiment.score - 50))
     .slice(0, 5);
   if(onemliHaberler.length === 0) return;
