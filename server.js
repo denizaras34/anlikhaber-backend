@@ -263,6 +263,10 @@ async function fetchAndSaveNews() {
           tweetAtildi: false,
         };
         haber.sentiment = haberSentimentSkoru(haber);
+        if (!haber.content || !haber.content.trim()) {
+          console.log('[RSS] Govde bos, atlandi:', (haber.title||'').substring(0,50));
+          continue;
+        }
         haberler.unshift(haber);
         yeni++;
         seffaflikStats.haftalikEklenen++;
