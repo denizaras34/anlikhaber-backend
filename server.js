@@ -8,6 +8,7 @@ const { TwitterApi } = require('twitter-api-v2');
 const Parser = require('rss-parser');
 const slugify = require('slugify');
 const Anthropic = require('@anthropic-ai/sdk');
+const { getDb, haberEkle, haberGuncelle, sonHaberler, haberSayisi } = require('./db/init');
 const app = express();
 
 // Top-level fetch — her fonksiyonda tekrar tanımlamaktan kaçın
@@ -268,6 +269,7 @@ async function fetchAndSaveNews() {
           continue;
         }
         haberler.unshift(haber);
+        try { haberEkle(haber); } catch(e) { console.log('[DB] haberEkle hata:', e.message); }
         yeni++;
         seffaflikStats.haftalikEklenen++;
         if(TELEGRAM_KANAL && yeni <= 3) {
@@ -331,6 +333,7 @@ async function tweetHaber(haber) {
     ].join('\n').substring(0, 280);
     await twitter.v2.tweet(tweetText);
     haber.tweetAtildi = true;
+    try { haberGuncelle(haber.slug, { tweetAtildi: true }); } catch(e) {}
     postedUrls.add(haber.orijinalUrl);
     console.log('Tweet atildi:', haber.title.substring(0, 50));
   } catch (e) {
@@ -620,6 +623,7 @@ Kategori: ${haber.cat} | Duygu: ${haber.sentiment.score}/100
         izlenecekGostergeler: analiz.izlenecekGostergeler,
         uyari: analiz.uyari
       };
+      try { haberGuncelle(haber.slug, { yorum: haber.yorum }); } catch(e) {}
       console.log('Derin analiz üretildi:', haber.title.substring(0, 50));
       if(analiz.xThread && process.env.X_API_KEY) {
         try {
@@ -1092,6 +1096,13 @@ app.listen(PORT, async () => {
   // v2 modülleri devre dışı — monolitle devam
   // anlikHaberModulleriniBaslat(app, twitter);
   console.log('AnlikHaber Backend - Port:', PORT);
+  try {
+    getDb();
+    haberler = sonHaberler(500);
+    console.log('[DB] Hidrasyon:', haberler.length, 'haber yüklendi (DB toplam:', haberSayisi() + ')');
+  } catch(e) {
+    console.log('[DB] Hidrasyon hata:', e.message);
+  }
   await fetchAndSaveNews();
   setTimeout(sentimentAnalizi, 2000);
 });

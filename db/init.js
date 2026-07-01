@@ -12,15 +12,16 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'anlikhaber.db');
+// DB dizini env ile taşınabilir (Railway volume: DB_DIR=/data). Yoksa local ./data.
+const DB_DIR = process.env.DB_DIR || path.join(__dirname, '..', 'data');
+const DB_PATH = path.join(DB_DIR, 'anlikhaber.db');
 
 let db;
 
 function getDb() {
   if (!db) {
     const fs = require('fs');
-    const dataDir = path.join(__dirname, '..', 'data');
-    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');  // Eşzamanlı okuma için
@@ -96,6 +97,18 @@ function initSchema(db) {
       olusturuldu_at  TEXT DEFAULT (datetime('now'))
     );
 
+    -- ─── Haberler (in-memory diziyi kalıcılaştırır) ─────────────────────────
+    CREATE TABLE IF NOT EXISTS haberler (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug            TEXT NOT NULL UNIQUE,
+      orijinal_url    TEXT UNIQUE,
+      cat             TEXT,
+      tarih           TEXT,
+      tweet_atildi    INTEGER DEFAULT 0,
+      haber_json      TEXT NOT NULL,          -- Tam haber objesi (JSON)
+      olusturuldu_at  TEXT DEFAULT (datetime('now'))
+    );
+
     -- ─── İndeksler ──────────────────────────────────────────────────────────
     CREATE INDEX IF NOT EXISTS idx_engagement_platform   ON engagement_metrics(platform, olusturuldu_at);
     CREATE INDEX IF NOT EXISTS idx_engagement_kategori   ON engagement_metrics(kategori);
@@ -103,6 +116,8 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_queue_durum           ON publish_queue(durum, hedef_zaman);
     CREATE INDEX IF NOT EXISTS idx_rss_aktif             ON rss_sources(aktif, oncelik);
     CREATE INDEX IF NOT EXISTS idx_newsletter_tarih      ON newsletter_log(gonderim_tarihi);
+    CREATE INDEX IF NOT EXISTS idx_haberler_cat          ON haberler(cat);
+    CREATE INDEX IF NOT EXISTS idx_haberler_tarih        ON haberler(tarih);
   `);
 
   // Varsayılan RSS kaynaklarını ekle (yoksa)
@@ -209,6 +224,61 @@ function kuyrukTamamlandi(id) {
   `).run(id);
 }
 
+// ── Haber kalıcılığı ────────────────────────────────────────────────────────
+
+function tarihStr(t) {
+  if (!t) return null;
+  return (t instanceof Date) ? t.toISOString() : String(t);
+}
+
+function haberEkle(haber) {
+  const db = getDb();
+  return db.prepare(`
+    INSERT OR IGNORE INTO haberler
+      (slug, orijinal_url, cat, tarih, tweet_atildi, haber_json)
+    VALUES
+      (@slug, @orijinal_url, @cat, @tarih, @tweet_atildi, @haber_json)
+  `).run({
+    slug:         haber.slug,
+    orijinal_url: haber.orijinalUrl || null,
+    cat:          haber.cat || null,
+    tarih:        tarihStr(haber.tarih),
+    tweet_atildi: haber.tweetAtildi ? 1 : 0,
+    haber_json:   JSON.stringify(haber),
+  });
+}
+
+// Hem ilgili kolonları hem haber_json'ı senkron günceller — hidrasyon JSON'dan
+// okuduğu için ikisi tutarlı kalmalı.
+function haberGuncelle(slug, patch) {
+  const db = getDb();
+  const row = db.prepare('SELECT haber_json FROM haberler WHERE slug = ?').get(slug);
+  if (!row) return null;
+  const haber = { ...JSON.parse(row.haber_json), ...patch };
+  return db.prepare(`
+    UPDATE haberler
+    SET cat = @cat, tarih = @tarih, tweet_atildi = @tweet_atildi, haber_json = @haber_json
+    WHERE slug = @slug
+  `).run({
+    slug,
+    cat:          haber.cat || null,
+    tarih:        tarihStr(haber.tarih),
+    tweet_atildi: haber.tweetAtildi ? 1 : 0,
+    haber_json:   JSON.stringify(haber),
+  });
+}
+
+function sonHaberler(limit = 500) {
+  const db = getDb();
+  return db.prepare('SELECT haber_json FROM haberler ORDER BY id DESC LIMIT ?')
+    .all(limit)
+    .map(r => JSON.parse(r.haber_json));
+}
+
+function haberSayisi() {
+  return getDb().prepare('SELECT COUNT(*) AS c FROM haberler').get().c;
+}
+
 module.exports = {
   getDb,
   kaydetEngagement,
@@ -216,4 +286,8 @@ module.exports = {
   kuyrugaEkle,
   bekleyenKuyruk,
   kuyrukTamamlandi,
+  haberEkle,
+  haberGuncelle,
+  sonHaberler,
+  haberSayisi,
 };
