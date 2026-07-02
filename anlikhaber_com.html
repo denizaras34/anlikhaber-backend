@@ -181,6 +181,9 @@ footer{border-top:1px solid var(--border);padding:24px 32px;margin-top:0}
 .footer-links a{color:var(--muted);text-decoration:none;transition:color .2s}
 .footer-links a:hover{color:var(--accent)}
 .footer-bottom{font-size:10px;color:var(--muted);border-top:1px solid var(--border);padding-top:12px;display:flex;justify-content:space-between}
+/* AdSense onayına kadar tüm reklam alanları gizli — onay gelince bu blok tamamen silinecek */
+.ad-box,.top-ad-wrap,.bottom-ad-strip,.left-sidebar,.sticky-bottom-ad{display:none!important}
+@media(min-width:769px){.main-grid{grid-template-columns:1fr 280px}}
 </style>
 </head>
 <body>
