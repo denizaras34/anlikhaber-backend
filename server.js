@@ -183,10 +183,36 @@ Kaynak: ${haber.kaynak} | Kategori: ${haber.cat || 'finans'} | Tarih: ${gun}
     return { title: haber.title, content: haber.description || '', metaDesc: '', imagePrompt: '' };
   }
 }
+// og:image çekme — sadece RSS'te resim bulunamayan haberler için (tarama başına maks OG_FETCH_LIMIT)
+const OG_FETCH_LIMIT = 10;
+let ogFetchCount = 0;
+async function fetchOgImage(url) {
+  if (!url || !url.startsWith('http')) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const r = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (AnlikHaberBot)' } });
+    if (!r.ok) return null;
+    const html = await r.text();
+    const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+            || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (og && og[1]) return og[1];
+    const tw = html.match(/<meta[^>]+(?:name|property)=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
+            || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']twitter:image["']/i);
+    if (tw && tw[1]) return tw[1];
+    return null;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 let fetchRunning = false;
 async function fetchAndSaveNews() {
   if (fetchRunning) { console.log('[RSS] Önceki tarama devam ediyor, atlanıyor.'); return; }
   fetchRunning = true;
+  ogFetchCount = 0;
   console.log('RSS taramasi baslıyor...');
   let yeni = 0;
   for (const feed of RSS_FEEDS) {
@@ -240,6 +266,11 @@ async function fetchAndSaveNews() {
         if (item.enclosure && item.enclosure.url && isValidImg(item.enclosure.url)) resim = item.enclosure.url;
         else if (item['media:content'] && item['media:content']['$'] && isValidImg(item['media:content']['$'].url)) resim = item['media:content']['$'].url;
         else if (item.image && isValidImg(item.image)) resim = item.image;
+        if (!resim && ogFetchCount < OG_FETCH_LIMIT) {
+          ogFetchCount++;
+          const og = await fetchOgImage(orijinalUrl);
+          if (og && isValidImg(og)) resim = og;
+        }
         let aiNotu = '';
         if (feed.lang === 'tr') {
           aiNotu = `Bu icerik ${feed.kaynak} kaynagindan derlenmistir.`;
