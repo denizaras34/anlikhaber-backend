@@ -245,10 +245,11 @@ async function fetchAndSaveNews() {
             turkishContent = (turkishContent || '') + '\n\nDetaylar icin kaynagi ziyaret edin: ' + feed.kaynak;
             metaDesc = turkishContent.substring(0, 160);
           }
-        } else if (feed.lang === 'tr' && anthropic && turkishContent) {
+        } else if (feed.lang === 'tr' && anthropic) {
           try {
             const aiContent = await generateTurkishContent({ title, description: turkishContent, kaynak: feed.kaynak, cat: feed.cat });
             turkishTitle = aiContent.title || title;
+            turkishContent = aiContent.content || turkishContent;
             metaDesc = aiContent.metaDesc || turkishContent.substring(0, 160);
             imagePrompt = process.env.IMAGE_PROMPT_ACTIVE === 'true' ? (aiContent.imagePrompt || '') : '';
             await sleep(1000);
